@@ -1,0 +1,11 @@
+[workspace]
+members = ["effing-macros"]
+
+[package]
+name = "effing-mad"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+effing-macros = { path = "effing-macros" }
+frunk = "0.4.0"
