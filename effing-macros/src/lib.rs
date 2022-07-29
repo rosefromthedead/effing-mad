@@ -12,12 +12,19 @@ use syn::{
 
 fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
-        let gen = #e;
-        let pinned = ::core::pin::Pin::new(&mut gen);
-        loop {
-            match gen.resume(()) {
-                ::core::ops::GeneratorState::Yielded(effs) => yield effs.embed(),
-                ::core::ops::GeneratorState::Complete(v) => break v,
+        {
+            use ::core::ops::{Generator, GeneratorState};
+            use ::frunk::coproduct::Coproduct;
+            let mut gen = #e;
+            let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
+            loop {
+                // safety: same as in `handle`
+                let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
+                match pinned.resume(injection) {
+                    GeneratorState::Yielded(effs) =>
+                        injection = (yield effs.embed()).subset().ok().unwrap(),
+                    GeneratorState::Complete(v) => break v,
+                }
             }
         }
     }
@@ -41,7 +48,7 @@ impl syn::fold::Fold for Effects {
         match e {
             Expr::Field(ref ef) => {
                 let Member::Named(ref name) = ef.member else { return e };
-                if name == "do" {
+                if name == "do_" {
                     quote_do(&ef.base)
                 } else {
                     e
@@ -50,7 +57,12 @@ impl syn::fold::Fold for Effects {
             Expr::Yield(ref y) => {
                 let Some(ref expr) = y.expr else { panic!("no expr?") };
                 parse_quote! {
-                    yield ::frunk::Coproduct::inject(#expr)
+                    {
+                        let effect = { #expr };
+                        let marker = ::effing_mad::macro_impl::mark(&effect);
+                        let injs = yield ::frunk::coproduct::Coproduct::inject(effect);
+                        ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
+                    }
                 }
             }
             e => e,
@@ -88,10 +100,16 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     quote! {
         #(#attrs)*
         #vis #constness #unsafety
-        fn #ident #generics(#inputs) -> impl ::core::ops::Generator<Yield = #yield_type, Return = #return_type> {
-            move || {
+        fn #ident #generics(#inputs)
+        -> impl ::core::ops::Generator<
+            <#yield_type as ::effing_mad::injection::InjectionList>::List,
+            Yield = #yield_type,
+            Return = #return_type
+        > {
+            move |_begin: <#yield_type as ::effing_mad::injection::InjectionList>::List| {
                 #new_block
             }
         }
-    }.into()
+    }
+    .into()
 }
