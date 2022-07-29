@@ -57,6 +57,9 @@ fn simple() {
     yield Log("no, sorry. i have gone home.".into());
 }
 
+// This function demonstrates how effect handlers can pass values back into the effectful function,
+// and how the `do_` operator can be used to call effectful functions, as long as the callee has a
+// subset of the caller's effects.
 #[effectful(Cancel, Log, FileRead)]
 fn combined() {
     let mischief = yield FileRead("~/my passwords.txt".into());
