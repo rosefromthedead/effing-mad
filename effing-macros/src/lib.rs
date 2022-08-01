@@ -30,20 +30,20 @@ fn quote_do(e: &Expr) -> Expr {
     }
 }
 
-struct Effects {
+struct Effectful {
     effects: Vec<Ident>,
 }
 
-impl Parse for Effects {
+impl Parse for Effectful {
     fn parse(input: ParseStream) -> Result<Self, Error> {
         let effects = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-        Ok(Effects {
+        Ok(Effectful {
             effects: effects.into_iter().collect(),
         })
     }
 }
 
-impl syn::fold::Fold for Effects {
+impl syn::fold::Fold for Effectful {
     fn fold_expr(&mut self, e: Expr) -> Expr {
         match e {
             Expr::Field(ref ef) => {
@@ -72,11 +72,16 @@ impl syn::fold::Fold for Effects {
 
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut effects = parse_macro_input!(args as Effects);
+    let mut effects = parse_macro_input!(args as Effectful);
     let effect_names = &effects.effects;
-    let yield_type = quote! {
-        ::frunk::Coprod!(#(#effect_names),*)
+    let mut yield_type = quote! {
+        ::frunk::coproduct::CNil
     };
+    for effect in effect_names {
+        yield_type = quote! {
+            <#effect as ::effing_mad::macro_impl::EffectSet<#yield_type>>::Out
+        };
+    }
     let ItemFn {
         attrs,
         vis,
