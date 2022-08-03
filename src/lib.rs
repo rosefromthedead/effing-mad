@@ -1,3 +1,4 @@
+#![feature(concat_idents)]
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(pin_macro)]
@@ -15,21 +16,10 @@ use frunk::{
     Coproduct,
 };
 
-pub use effing_macros::effectful;
+pub use effing_macros::{effectful, effects, handler};
 use injection::{Begin, InjectionList, Tagged};
 
 pub enum Never {}
-
-pub struct Pure<T: Unpin>(Option<T>);
-
-impl<T: Unpin> Generator<()> for Pure<T> {
-    type Yield = Never;
-    type Return = T;
-
-    fn resume(mut self: Pin<&mut Self>, _arg: ()) -> GeneratorState<Never, T> {
-        GeneratorState::Complete(self.0.take().unwrap())
-    }
-}
 
 pub fn run<F, R>(mut f: F) -> R
 where
@@ -44,6 +34,30 @@ where
 
 pub trait Effect {
     type Injection;
+}
+
+pub trait IntoEffect {
+    type Effect: Effect;
+    type Injection;
+
+    fn into_effect(self) -> Self::Effect;
+    fn inject(inj: Self::Injection) -> <Self::Effect as Effect>::Injection;
+    fn uninject(injs: <Self::Effect as Effect>::Injection) -> Option<Self::Injection>;
+}
+
+impl<E: Effect> IntoEffect for E {
+    type Effect = Self;
+    type Injection = <Self as Effect>::Injection;
+
+    fn into_effect(self) -> Self {
+        self
+    }
+    fn inject(inj: Self::Injection) -> Self::Injection {
+        inj
+    }
+    fn uninject(injs: Self::Injection) -> Option<Self::Injection> {
+        Some(injs)
+    }
 }
 
 pub fn handle<

@@ -1,42 +1,11 @@
 use core::marker::PhantomData;
 
-use frunk::{coproduct::{CoprodUninjector, CNil}, Coproduct};
+use frunk::{
+    coproduct::{CNil, CoprodUninjector},
+    Coproduct,
+};
 
-use crate::{injection::Tagged, Effect};
-
-// I would have liked to put this in the effing_macros crate, but it turns out you can't do that.
-#[macro_export]
-macro_rules! effect_set {
-    ($effects:ident {
-        $(
-        fn $effect:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty;
-        )*
-    }) => {
-        struct $effects;
-
-        impl $effects {
-            $(
-            fn $effect($($arg: $arg_ty),*) -> $effect {
-                $effect($($arg),*)
-            }
-            )*
-        }
-
-        impl<Tail> ::effing_mad::macro_impl::EffectSet<Tail> for $effects {
-            type Out =
-                <::frunk::Coprod!($($effect),*) as ::effing_mad::macro_impl::Prepend<Tail>>::Out;
-        }
-
-        $(
-        #[allow(non_camel_case_types)]
-        struct $effect($($arg_ty),*);
-
-        impl ::effing_mad::Effect for $effect {
-            type Injection = $ret;
-        }
-        )*
-    };
-}
+use crate::{injection::Tagged, Effect, IntoEffect};
 
 /// Construct a PhantomData with the type of an expression
 pub fn mark<T>(_: &T) -> PhantomData<T> {
@@ -49,6 +18,14 @@ where
     Injs: CoprodUninjector<Tagged<E::Injection, E>, Index>,
 {
     injs.uninject().ok().map(Tagged::untag)
+}
+
+pub fn get_inj2<E, I, Injs>(injs: Injs, _marker: PhantomData<I>) -> Option<I::Injection>
+where
+    I: IntoEffect<Effect = E>,
+    E: Effect<Injection = Injs>,
+{
+    I::uninject(injs)
 }
 
 pub trait EffectSet<Tail> {
