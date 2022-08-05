@@ -6,6 +6,8 @@
 //
 // This is done by the function `combined()`, which uses effects Cancel, Log, and FileRead, whose
 // behaviours are all specified in the effect handlers in `main()`.
+// Note that the effect definitions are written out manually in this example. For usage of the
+// effects! macro, which allows more ergonomic effect definitions, see effects_macro.rs
 
 #![feature(generators)]
 #![feature(generator_trait)]
@@ -37,9 +39,9 @@ impl Effect for Cancel {
     type Injection = effing_mad::Never;
 }
 
-struct Log(String);
+struct Log<'a>(std::borrow::Cow<'a, str>);
 
-impl Effect for Log {
+impl<'a> Effect for Log<'a> {
     /// The logging handler does not provide any information back to the effectful function.
     type Injection = ();
 }
@@ -58,8 +60,8 @@ impl Effect for FileRead {
 // execution, so this function would otherwise cause a warning. However, this warning only comes up
 // if there is a `yield` after cancelling, not if there are only normal statements and expressions.
 #[allow(unreachable_code)]
-#[effectful(Cancel, Log)]
-fn simple() {
+#[effectful(Cancel, Log<'a>)]
+fn simple<'a>() {
     yield Log("starting...".into());
     yield Log("something went wrong! aah!".into());
     yield Cancel;
@@ -69,10 +71,13 @@ fn simple() {
 // This function demonstrates how effect handlers can pass values back into the effectful function,
 // and how the `do_` operator can be used to call effectful functions, as long as the callee has a
 // subset of the caller's effects.
-#[effectful(Cancel, Log, FileRead)]
-fn combined() {
+#[effectful(Cancel, Log<'a>, FileRead)]
+fn combined<'a>() {
     let mischief = yield FileRead("~/my passwords.txt".into());
-    yield Log(format!("I know your password! It's {mischief}"));
+    // this is why Log has to use Cow - we can't yield something referencing local content...
+    // ...for some reason. I sure hope that doesn't foil my plans to take over Rust with algebraic
+    // effects.
+    yield Log(format!("I know your password! It's {mischief}").into());
     yield Log("I'm going to do evil things and you can't stop me!".into());
     simple().do_;
 }

@@ -9,7 +9,7 @@ fn main() {
     let handled = handle(
         use_state(),
         handler! {
-            StateI32,
+            State<i32>,
             get() => ControlFlow::Continue(state),
             put(v) => {
                 state = v;
@@ -22,17 +22,16 @@ fn main() {
 }
 
 effing_mad::effects! {
-    // No generics support yet, but everything is made of integers anyway...
-    StateI32 {
-        fn get() -> i32;
-        fn put(v: i32) -> ();
+    State<T> {
+        fn get() -> T;
+        fn put(v: T) -> ();
     }
 }
 
 // Rust encourages immutability!
-#[effectful(StateI32)]
+#[effectful(State<i32>)]
 fn use_state() {
-    let initial = yield StateI32::get();
+    let initial = yield State::get();
     println!("initial value: {}", initial);
-    yield StateI32::put(initial + 5);
+    yield State::put(initial + 5);
 }

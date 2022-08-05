@@ -9,7 +9,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Error, Expr, Ident, ItemFn, Member, Pat, ReturnType, Signature, Token, Type,
+    Error, Expr, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member, Pat, ReturnType,
+    Signature, Token, Type, TypeParam,
 };
 
 fn quote_do(e: &Expr) -> Expr {
@@ -33,15 +34,13 @@ fn quote_do(e: &Expr) -> Expr {
 }
 
 struct Effectful {
-    effects: Vec<Ident>,
+    effects: Punctuated<Type, Token![,]>,
 }
 
 impl Parse for Effectful {
     fn parse(input: ParseStream) -> Result<Self, Error> {
-        let effects = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-        Ok(Effectful {
-            effects: effects.into_iter().collect(),
-        })
+        let effects = Punctuated::parse_terminated(input)?;
+        Ok(Effectful { effects })
     }
 }
 
@@ -163,24 +162,34 @@ impl Parse for Effect {
 
 struct Effects {
     name: Ident,
+    generics: Generics,
     effects: Punctuated<Effect, Token![;]>,
 }
 
 impl Parse for Effects {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let name = input.parse()?;
+        let generics = input.parse()?;
 
         let content;
         braced!(content in input);
         let effects = Punctuated::parse_terminated(&content)?;
 
-        Ok(Effects { name, effects })
+        Ok(Effects {
+            name,
+            generics,
+            effects,
+        })
     }
 }
 
 #[proc_macro]
 pub fn effects(input: TokenStream) -> TokenStream {
-    let Effects { name, effects } = parse_macro_input!(input as Effects);
+    let Effects {
+        name,
+        generics,
+        effects,
+    } = parse_macro_input!(input as Effects);
     let injs_name = Ident::new(&format!("{}Injs", name.to_string()), Span::call_site());
 
     let variants = effects
@@ -192,6 +201,26 @@ pub fn effects(input: TokenStream) -> TokenStream {
         .map(|Effect { name, .. }| format_ident!("__{name}"))
         .collect::<Vec<_>>();
     let eff_name = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
+    let phantom_data_tys = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(TypeParam { ident, .. }) => {
+                quote!(::core::marker::PhantomData<#ident>)
+            }
+            GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
+                quote!(::core::marker::PhantomData<&#lifetime ()>)
+            }
+            syn::GenericParam::Const(_) => todo!(),
+        })
+        .collect::<Vec<_>>();
+    let phantom_data_tys = quote!(#(#phantom_data_tys),*);
+    let phantom_datas = generics
+        .params
+        .iter()
+        .map(|_| quote!(::core::marker::PhantomData))
+        .collect::<Vec<_>>();
+    let phantom_datas = quote!(#(#phantom_datas),*);
 
     let arg_name = effects
         .iter()
@@ -204,45 +233,45 @@ pub fn effects(input: TokenStream) -> TokenStream {
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
-        enum #name {
+        enum #name #generics {
             #(
             #variants(#(#arg_ty),*)
             ),*
         }
 
-        enum #injs_name {
+        enum #injs_name #generics {
             #(
             #variants(#ret_ty)
             ),*
         }
 
-        impl #name {
+        impl #generics #name #generics {
             #(
-            pub fn #eff_name(#(#arg_name: #arg_ty),*) -> #structs {
-                #structs(#(#arg_name),*)
+            pub fn #eff_name(#(#arg_name: #arg_ty),*) -> #structs #generics {
+                #structs(#(#arg_name,)* #phantom_datas)
             }
             )*
         }
 
-        impl ::effing_mad::Effect for #name {
-            type Injection = #injs_name;
+        impl #generics ::effing_mad::Effect for #name #generics {
+            type Injection = #injs_name #generics;
         }
 
         #(
-        struct #structs(#(#arg_ty),*);
+        struct #structs #generics(#(#arg_ty,)* #phantom_data_tys);
 
-        impl ::effing_mad::IntoEffect for #structs {
-            type Effect = #name;
+        impl #generics ::effing_mad::IntoEffect for #structs #generics {
+            type Effect = #name #generics;
             type Injection = #ret_ty;
 
             fn into_effect(self) -> Self::Effect {
-                let #structs(#(#arg_name),*) = self;
+                let #structs(#(#arg_name,)* ..) = self;
                 #name::#variants(#(#arg_name),*)
             }
-            fn inject(inj: #ret_ty) -> #injs_name {
+            fn inject(inj: #ret_ty) -> #injs_name #generics {
                 #injs_name::#variants(inj)
             }
-            fn uninject(injs: #injs_name) -> Option<#ret_ty> {
+            fn uninject(injs: #injs_name #generics) -> Option<#ret_ty> {
                 match injs {
                     #injs_name::#variants(inj) => Some(inj),
                     _ => None,
@@ -277,15 +306,21 @@ impl Parse for HandlerArm {
 
 struct Handler {
     eff: Ident,
+    generics: Generics,
     arms: Punctuated<HandlerArm, Token![,]>,
 }
 
 impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let eff = input.parse()?;
+        let generics = input.parse()?;
         <Token![,]>::parse(input)?;
         let arms = Punctuated::parse_terminated(input)?;
-        Ok(Handler { eff, arms })
+        Ok(Handler {
+            eff,
+            generics,
+            arms,
+        })
     }
 }
 
@@ -293,6 +328,7 @@ impl Parse for Handler {
 pub fn handler(input: TokenStream) -> TokenStream {
     let handler = parse_macro_input!(input as Handler);
     let eff_name = handler.eff;
+    let eff_generics = handler.generics;
     let injs_name = format_ident!("{eff_name}Injs");
     let eff = handler
         .arms
@@ -307,7 +343,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
         .iter()
         .map(|HandlerArm { breaker, .. }| breaker);
     quote! {
-        |eff: #eff_name| match eff {
+        |eff: #eff_name #eff_generics| match eff {
             #(
             #eff_name::#eff(#(#arg_name),*) => match #breaker {
                 ::core::ops::ControlFlow::Continue(inj) =>
