@@ -1,4 +1,3 @@
-#![feature(concat_idents)]
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(pin_macro)]
