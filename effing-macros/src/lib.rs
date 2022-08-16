@@ -305,6 +305,8 @@ impl Parse for HandlerArm {
 }
 
 struct Handler {
+    r#async: Option<Token![async]>,
+    r#move: Option<Token![move]>,
     eff: Ident,
     generics: Generics,
     arms: Punctuated<HandlerArm, Token![,]>,
@@ -312,11 +314,15 @@ struct Handler {
 
 impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let r#async = input.parse()?;
+        let r#move = input.parse()?;
         let eff = input.parse()?;
         let generics = input.parse()?;
         <Token![,]>::parse(input)?;
         let arms = Punctuated::parse_terminated(input)?;
         Ok(Handler {
+            r#async,
+            r#move,
             eff,
             generics,
             arms,
@@ -327,6 +333,8 @@ impl Parse for Handler {
 #[proc_macro]
 pub fn handler(input: TokenStream) -> TokenStream {
     let handler = parse_macro_input!(input as Handler);
+    let handler_async = handler.r#async.map(|_| quote!(async move));
+    let handler_move = handler.r#move;
     let eff_name = handler.eff;
     let eff_generics = handler.generics;
     let injs_name = format_ident!("{eff_name}Injs");
@@ -343,14 +351,16 @@ pub fn handler(input: TokenStream) -> TokenStream {
         .iter()
         .map(|HandlerArm { breaker, .. }| breaker);
     quote! {
-        |eff: #eff_name #eff_generics| match eff {
-            #(
-            #eff_name::#eff(#(#arg_name),*) => match #breaker {
-                ::core::ops::ControlFlow::Continue(inj) =>
-                    ::core::ops::ControlFlow::Continue(#injs_name::#eff(inj)),
-                ::core::ops::ControlFlow::Break(ret) => ::core::ops::ControlFlow::Break(ret),
+        #handler_move |eff: #eff_name #eff_generics| #handler_async {
+            match eff {
+                #(
+                #eff_name::#eff(#(#arg_name),*) => match #breaker {
+                    ::core::ops::ControlFlow::Continue(inj) =>
+                        ::core::ops::ControlFlow::Continue(#injs_name::#eff(inj)),
+                    ::core::ops::ControlFlow::Break(ret) => ::core::ops::ControlFlow::Break(ret),
+                }
+                ),*
             }
-            ),*
         }
     }
     .into()

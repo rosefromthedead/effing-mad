@@ -7,12 +7,14 @@ pub mod injection;
 pub mod macro_impl;
 
 use core::{
+    future::Future,
+    marker::PhantomPinned,
     ops::{ControlFlow, Generator, GeneratorState},
     pin::Pin,
 };
 use frunk::{
     coproduct::{CNil, CoprodInjector, CoprodUninjector, CoproductEmbedder},
-    Coproduct,
+    Coprod, Coproduct,
 };
 
 pub use effing_macros::{effectful, effects, handler};
@@ -101,6 +103,36 @@ where
                     }
                 },
                 GeneratorState::Complete(ret) => return ret,
+            }
+        }
+    }
+}
+
+pub async fn run_async<Eff, G, R, H, Fut>(mut g: G, mut handler: H) -> G::Return
+where
+    Eff: Effect,
+    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff), Return = R>,
+    H: FnMut(Eff) -> Fut,
+    Fut: Future<Output = ControlFlow<R, Eff::Injection>>,
+{
+    // forcing this future to be pinned so the unsafe below is sound
+    // async fns might be unconditionally !Unpin but im not sure
+    let caution = PhantomPinned;
+    let mut inj = Coproduct::inject(Begin);
+    loop {
+        // safety: see handle()
+        let pinned = unsafe { Pin::new_unchecked(&mut g) };
+        match pinned.resume(inj) {
+            GeneratorState::Yielded(eff) => match handler(eff.take().unwrap()).await {
+                ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
+                ControlFlow::Break(ret) => {
+                    drop(caution);
+                    return ret;
+                }
+            },
+            GeneratorState::Complete(ret) => {
+                drop(caution);
+                return ret;
             }
         }
     }
