@@ -76,19 +76,7 @@ pub fn map<E, I, T, U>(
     }
 }
 
-pub fn handle<
-    G,
-    R,
-    E,
-    PreEs,
-    PostEs,
-    EffIndex,
-    PreIs,
-    PostIs,
-    BeginIndex,
-    InjIndex,
-    EmbedIndices,
->(
+pub fn handle<G, R, E, PreEs, PostEs, EffIndex, PreIs, PostIs, BeginIndex, InjIndex, EmbedIndices>(
     mut g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>
