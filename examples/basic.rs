@@ -1,13 +1,13 @@
-// This program prints out the following:
-// log: I know your password! It's monadtransformerssuck
-// log: I'm going to do evil things and you can't stop me!
-// log: starting...
-// log: something went wrong! aah!
-//
-// This is done by the function `combined()`, which uses effects Cancel, Log, and FileRead, whose
-// behaviours are all specified in the effect handlers in `main()`.
-// Note that the effect definitions are written out manually in this example. For usage of the
-// effects! macro, which allows more ergonomic effect definitions, see effects_macro.rs
+//! This program prints out the following:
+//! log: I know your password! It's monadtransformerssuck
+//! log: I'm going to do evil things and you can't stop me!
+//! log: starting...
+//! log: something went wrong! aah!
+//!
+//! This is done by the function `combined()`, which uses effects Cancel, Log, and FileRead, whose
+//! behaviours are all specified in the effect handlers in `main()`.
+//! Note that the effect definitions are written out manually in this example. For usage of the
+//! effects! macro, which allows more ergonomic effect definitions, see effects_macro.rs
 
 #![feature(generators)]
 #![feature(generator_trait)]
