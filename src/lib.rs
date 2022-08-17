@@ -78,7 +78,7 @@ pub fn map<E, I, T, U>(
 }
 
 pub fn handle<
-    F,
+    G,
     R,
     E,
     PreEs,
@@ -90,7 +90,7 @@ pub fn handle<
     InjIndex,
     EmbedIndices,
 >(
-    mut f: F,
+    mut g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>
 where
@@ -99,13 +99,15 @@ where
     PostEs: InjectionList<List = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex1> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
-    F: Generator<PreIs, Yield = PreEs, Return = R>,
+    G: Generator<PreIs, Yield = PreEs, Return = R>,
 {
     move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         loop {
-            // safety: i genuinely don't know
-            let pinned = unsafe { Pin::new_unchecked(&mut f) };
+            // safety: im 90% sure that since we are inside Generator::resume, which takes
+            // Pin<&mut self>, all locals in this function are effectively pinned and this call is
+            // simply projecting that
+            let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
                 GeneratorState::Yielded(effs) => match effs.uninject() {
                     Ok(eff) => match handler(eff) {

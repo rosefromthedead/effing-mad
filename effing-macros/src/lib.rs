@@ -233,12 +233,14 @@ pub fn effects(input: TokenStream) -> TokenStream {
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
+        #[allow(non_camel_case_types)]
         enum #name #generics {
             #(
             #variants(#(#arg_ty),*)
             ),*
         }
 
+        #[allow(non_camel_case_types)]
         enum #injs_name #generics {
             #(
             #variants(#ret_ty)
@@ -258,6 +260,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         }
 
         #(
+        #[allow(non_camel_case_types)]
         struct #structs #generics(#(#arg_ty,)* #phantom_data_tys);
 
         impl #generics ::effing_mad::IntoEffect for #structs #generics {
