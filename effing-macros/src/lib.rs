@@ -10,7 +10,7 @@ use syn::{
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Error, Expr, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member, Pat, ReturnType,
-    Signature, Token, Type, TypeParam,
+    Signature, Token, Type, TypeParam, Visibility,
 };
 
 fn quote_do(e: &Expr) -> Expr {
@@ -161,14 +161,19 @@ impl Parse for Effect {
 }
 
 struct Effects {
-    name: Ident,
+    vis: Visibility,
+    mod_name: Ident,
+    eff_name: Ident,
     generics: Generics,
     effects: Punctuated<Effect, Token![;]>,
 }
 
 impl Parse for Effects {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name = input.parse()?;
+        let vis = input.parse()?;
+        let mod_name = input.parse()?;
+        <Token![::]>::parse(input)?;
+        let eff_name = input.parse()?;
         let generics = input.parse()?;
 
         let content;
@@ -176,7 +181,9 @@ impl Parse for Effects {
         let effects = Punctuated::parse_terminated(&content)?;
 
         Ok(Effects {
-            name,
+            vis,
+            mod_name,
+            eff_name,
             generics,
             effects,
         })
@@ -186,11 +193,13 @@ impl Parse for Effects {
 #[proc_macro]
 pub fn effects(input: TokenStream) -> TokenStream {
     let Effects {
-        name,
+        vis,
+        mod_name,
+        eff_name,
         generics,
         effects,
     } = parse_macro_input!(input as Effects);
-    let injs_name = Ident::new(&format!("{}Injs", name), Span::call_site());
+    let injs_name = Ident::new(&format!("{}Injs", eff_name), Span::call_site());
 
     let variants = effects
         .iter()
@@ -200,7 +209,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         .iter()
         .map(|Effect { name, .. }| format_ident!("__{name}"))
         .collect::<Vec<_>>();
-    let eff_name = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
+    let eff_names = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
     let phantom_data_tys = generics
         .params
         .iter()
@@ -233,55 +242,60 @@ pub fn effects(input: TokenStream) -> TokenStream {
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
-        #[allow(non_camel_case_types)]
-        enum #name #generics {
-            #(
-            #variants(#(#arg_ty),*)
-            ),*
-        }
+        /// An effect definition.
+        ///
+        /// To handle this effect, use the `handler!` macro.
+        #vis mod #mod_name {
+            #[allow(non_camel_case_types)]
+            pub enum #eff_name #generics {
+                #(
+                #variants(#(#arg_ty),*)
+                ),*
+            }
 
-        #[allow(non_camel_case_types)]
-        enum #injs_name #generics {
-            #(
-            #variants(#ret_ty)
-            ),*
-        }
+            #[allow(non_camel_case_types)]
+            pub enum #injs_name #generics {
+                #(
+                #variants(#ret_ty)
+                ),*
+            }
 
-        impl #generics #name #generics {
+            impl #generics #eff_name #generics {
+                #(
+                pub fn #eff_names(#(#arg_name: #arg_ty),*) -> #structs #generics {
+                    #structs(#(#arg_name,)* #phantom_datas)
+                }
+                )*
+            }
+
+            impl #generics ::effing_mad::Effect for #eff_name #generics {
+                type Injection = #injs_name #generics;
+            }
+
             #(
-            pub fn #eff_name(#(#arg_name: #arg_ty),*) -> #structs #generics {
-                #structs(#(#arg_name,)* #phantom_datas)
+            #[allow(non_camel_case_types)]
+            pub struct #structs #generics(#(#arg_ty,)* #phantom_data_tys);
+
+            impl #generics ::effing_mad::IntoEffect for #structs #generics {
+                type Effect = #eff_name #generics;
+                type Injection = #ret_ty;
+
+                fn into_effect(self) -> Self::Effect {
+                    let #structs(#(#arg_name,)* ..) = self;
+                    #eff_name::#variants(#(#arg_name),*)
+                }
+                fn inject(inj: #ret_ty) -> #injs_name #generics {
+                    #injs_name::#variants(inj)
+                }
+                fn uninject(injs: #injs_name #generics) -> Option<#ret_ty> {
+                    match injs {
+                        #injs_name::#variants(inj) => Some(inj),
+                        _ => None,
+                    }
+                }
             }
             )*
         }
-
-        impl #generics ::effing_mad::Effect for #name #generics {
-            type Injection = #injs_name #generics;
-        }
-
-        #(
-        #[allow(non_camel_case_types)]
-        struct #structs #generics(#(#arg_ty,)* #phantom_data_tys);
-
-        impl #generics ::effing_mad::IntoEffect for #structs #generics {
-            type Effect = #name #generics;
-            type Injection = #ret_ty;
-
-            fn into_effect(self) -> Self::Effect {
-                let #structs(#(#arg_name,)* ..) = self;
-                #name::#variants(#(#arg_name),*)
-            }
-            fn inject(inj: #ret_ty) -> #injs_name #generics {
-                #injs_name::#variants(inj)
-            }
-            fn uninject(injs: #injs_name #generics) -> Option<#ret_ty> {
-                match injs {
-                    #injs_name::#variants(inj) => Some(inj),
-                    _ => None,
-                }
-            }
-        }
-        )*
     }
     .into()
 }
@@ -308,25 +322,29 @@ impl Parse for HandlerArm {
 }
 
 struct Handler {
-    r#async: Option<Token![async]>,
-    r#move: Option<Token![move]>,
-    eff: Ident,
+    asyncness: Option<Token![async]>,
+    moveness: Option<Token![move]>,
+    mod_name: Ident,
+    eff_name: Ident,
     generics: Generics,
     arms: Punctuated<HandlerArm, Token![,]>,
 }
 
 impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let r#async = input.parse()?;
-        let r#move = input.parse()?;
-        let eff = input.parse()?;
+        let asyncness = input.parse()?;
+        let moveness = input.parse()?;
+        let mod_name = input.parse()?;
+        <Token![::]>::parse(input)?;
+        let eff_name = input.parse()?;
         let generics = input.parse()?;
         <Token![,]>::parse(input)?;
         let arms = Punctuated::parse_terminated(input)?;
         Ok(Handler {
-            r#async,
-            r#move,
-            eff,
+            asyncness,
+            moveness,
+            mod_name,
+            eff_name,
             generics,
             arms,
         })
@@ -335,34 +353,35 @@ impl Parse for Handler {
 
 #[proc_macro]
 pub fn handler(input: TokenStream) -> TokenStream {
-    let handler = parse_macro_input!(input as Handler);
-    let handler_async = handler.r#async.map(|_| quote!(async move));
-    let handler_move = handler.r#move;
-    let eff_name = handler.eff;
-    let eff_generics = handler.generics;
+    let Handler {
+        asyncness,
+        moveness,
+        mod_name,
+        eff_name,
+        generics,
+        arms,
+    } = parse_macro_input!(input as Handler);
     let injs_name = format_ident!("{eff_name}Injs");
-    let eff = handler
-        .arms
+    let eff = arms
         .iter()
         .map(|HandlerArm { eff, .. }| format_ident!("__{eff}"));
-    let arg_name = handler
-        .arms
+    let arg_name = arms
         .iter()
         .map(|HandlerArm { args, .. }| args.iter().collect::<Vec<_>>());
-    let breaker = handler
-        .arms
-        .iter()
-        .map(|HandlerArm { breaker, .. }| breaker);
+    let breaker = arms.iter().map(|HandlerArm { breaker, .. }| breaker);
     quote! {
-        #handler_move |eff: #eff_name #eff_generics| #handler_async {
-            match eff {
-                #(
-                #eff_name::#eff(#(#arg_name),*) => match #breaker {
-                    ::core::ops::ControlFlow::Continue(inj) =>
-                        ::core::ops::ControlFlow::Continue(#injs_name::#eff(inj)),
-                    ::core::ops::ControlFlow::Break(ret) => ::core::ops::ControlFlow::Break(ret),
+        {
+            use #mod_name::*;
+            #moveness |eff: #eff_name #generics| #asyncness {
+                match eff {
+                    #(
+                    #eff_name::#eff(#(#arg_name),*) => match #breaker {
+                        ::core::ops::ControlFlow::Continue(inj) =>
+                            ::core::ops::ControlFlow::Continue(#injs_name::#eff(inj)),
+                        ::core::ops::ControlFlow::Break(ret) => ::core::ops::ControlFlow::Break(ret),
+                    }
+                    ),*
                 }
-                ),*
             }
         }
     }

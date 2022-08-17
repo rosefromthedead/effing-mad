@@ -9,7 +9,7 @@ fn main() {
     let handled = handle(
         use_state(),
         handler! {
-            State<i32>,
+            state::State<i32>,
             get() => ControlFlow::Continue(state),
             put(v) => {
                 state = v;
@@ -22,12 +22,13 @@ fn main() {
 }
 
 effing_mad::effects! {
-    State<T> {
+    state::State<T> {
         fn get() -> T;
         fn put(v: T) -> ();
     }
 }
 
+use state::State;
 // Rust encourages immutability!
 #[effectful(State<i32>)]
 fn use_state() {
