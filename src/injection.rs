@@ -10,9 +10,10 @@ use crate::Effect;
 
 pub struct Begin;
 
-/// Tagging a value with PhantomData of another type allows it to be distinguished from other
+/// Tagging a value with `PhantomData` of another type allows it to be distinguished from other
 /// occurrences of the same type in a coproduct. If two effects' injections were both i32, it would
-/// be impossible to tell them apart without tagging them with the effect that they come from.
+/// be impossible to tell the injections apart without tagging them with the effect that they come
+/// from.
 pub struct Tagged<T, Tag>(T, PhantomData<Tag>);
 
 impl<T, Tag> Tagged<T, Tag> {

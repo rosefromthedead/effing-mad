@@ -190,7 +190,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         generics,
         effects,
     } = parse_macro_input!(input as Effects);
-    let injs_name = Ident::new(&format!("{}Injs", name.to_string()), Span::call_site());
+    let injs_name = Ident::new(&format!("{}Injs", name), Span::call_site());
 
     let variants = effects
         .iter()

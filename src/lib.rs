@@ -8,7 +8,6 @@ pub mod macro_impl;
 
 use core::{
     future::Future,
-    marker::PhantomPinned,
     ops::{ControlFlow, Generator, GeneratorState},
     pin::Pin,
 };
@@ -86,7 +85,7 @@ pub fn handle<
     EffIndex,
     PreIs,
     PostIs,
-    BeginIndex1,
+    BeginIndex,
     InjIndex,
     EmbedIndices,
 >(
@@ -97,7 +96,7 @@ where
     E: Effect,
     PreEs: InjectionList<List = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
     PostEs: InjectionList<List = PostIs>,
-    PreIs: CoprodInjector<Begin, BeginIndex1> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
+    PreIs: CoprodInjector<Begin, BeginIndex> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
     G: Generator<PreIs, Yield = PreEs, Return = R>,
 {
@@ -133,25 +132,16 @@ where
     H: FnMut(Eff) -> Fut,
     Fut: Future<Output = ControlFlow<R, Eff::Injection>>,
 {
-    // forcing this future to be pinned so the unsafe below is sound
-    // async fns might be unconditionally !Unpin but im not sure
-    let caution = PhantomPinned;
     let mut inj = Coproduct::inject(Begin);
     loop {
-        // safety: see handle()
+        // safety: see handle() - remember that futures are pinned in the same way as generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(inj) {
             GeneratorState::Yielded(eff) => match handler(eff.take().unwrap()).await {
                 ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
-                ControlFlow::Break(ret) => {
-                    drop(caution);
-                    return ret;
-                }
+                ControlFlow::Break(ret) => return ret,
             },
-            GeneratorState::Complete(ret) => {
-                drop(caution);
-                return ret;
-            }
+            GeneratorState::Complete(ret) => return ret,
         }
     }
 }

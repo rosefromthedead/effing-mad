@@ -8,6 +8,7 @@ use frunk::{
 use crate::{injection::Tagged, Effect, IntoEffect};
 
 /// Construct a PhantomData with the type of an expression
+#[must_use]
 pub fn mark<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }
