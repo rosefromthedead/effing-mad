@@ -61,6 +61,22 @@ impl<E: Effect> IntoEffect for E {
     }
 }
 
+pub fn map<E, I, T, U>(
+    mut g: impl Generator<I, Yield = E, Return = T>,
+    f: impl FnOnce(T) -> U,
+) -> impl Generator<I, Yield = E, Return = U> {
+    move |mut injs: I| {
+        loop {
+            // safety: see handle()
+            let pinned = unsafe { Pin::new_unchecked(&mut g) };
+            match pinned.resume(injs) {
+                GeneratorState::Yielded(effs) => injs = yield effs,
+                GeneratorState::Complete(ret) => return f(ret),
+            }
+        }
+    }
+}
+
 pub fn handle<
     F,
     R,
