@@ -12,7 +12,7 @@ use core::{
     pin::Pin,
 };
 use frunk::{
-    coproduct::{CNil, CoprodInjector, CoprodUninjector, CoproductEmbedder},
+    coproduct::{CNil, CoprodInjector, CoprodUninjector, CoproductEmbedder, CoproductSubsetter},
     Coprod, Coproduct,
 };
 
@@ -97,14 +97,98 @@ where
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
                 GeneratorState::Yielded(effs) => match effs.uninject() {
+                    // the effect we are handling
                     Ok(eff) => match handler(eff) {
                         ControlFlow::Continue(inj) => injection = PreIs::inject(Tagged::new(inj)),
                         ControlFlow::Break(ret) => return ret,
                     },
+                    // any other effect
                     Err(effs) => {
                         let effs: PostEs = effs;
                         let inj = yield effs;
                         injection = inj.embed();
+                    }
+                },
+                GeneratorState::Complete(ret) => return ret,
+            }
+        }
+    }
+}
+
+pub fn transform<
+    G1,
+    R,
+    E,
+    H,
+    PreEs,
+    PreHandleEs,
+    HandlerEs,
+    PostEs,
+    EffIndex,
+    PreIs,
+    PreHandleIs,
+    HandlerIs,
+    PostIs,
+    BeginIndex1,
+    BeginIndex2,
+    BeginIndex3,
+    InjIndex,
+    SubsetIndices1,
+    SubsetIndices2,
+    EmbedIndices2,
+    EmbedIndices3,
+    EmbedIndices4,
+>(
+    mut g: G1,
+    mut handler: impl FnMut(E) -> H,
+) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+where
+    E: Effect,
+    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
+    PreEs: InjectionList<List = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
+    PreHandleEs: InjectionList<List = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
+    HandlerEs: InjectionList<List = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices3>,
+    PostEs: InjectionList<List = PostIs>,
+    PreIs: CoprodInjector<Begin, BeginIndex1>
+        + CoprodUninjector<Tagged<E::Injection, E>, InjIndex, Remainder = PreHandleIs>,
+    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices4>,
+    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
+    PostIs: CoprodInjector<Begin, BeginIndex3>
+        + CoproductSubsetter<
+            <PreIs as CoprodUninjector<Tagged<E::Injection, E>, InjIndex>>::Remainder,
+            SubsetIndices1,
+        > + CoproductSubsetter<HandlerIs, SubsetIndices2>,
+    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+{
+    move |_begin: PostIs| {
+        let mut injection = PreIs::inject(Begin);
+        loop {
+            // safety: see handle()
+            let pinned = unsafe { Pin::new_unchecked(&mut g) };
+            match pinned.resume(injection) {
+                GeneratorState::Yielded(effs) => match effs.uninject() {
+                    // the effect we are handling
+                    Ok(eff) => {
+                        let mut handling = handler(eff);
+                        let mut handler_inj = HandlerIs::inject(Begin);
+                        'run_handler: loop {
+                            // safety: same again
+                            let pinned = unsafe { Pin::new_unchecked(&mut handling) };
+                            match pinned.resume(handler_inj) {
+                                GeneratorState::Yielded(effs) => {
+                                    handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap()
+                                }
+                                GeneratorState::Complete(inj) => {
+                                    injection = PreIs::inject(Tagged::new(inj));
+                                    break 'run_handler;
+                                }
+                            }
+                        }
+                    }
+                    // any other effect
+                    Err(effs) => {
+                        injection =
+                            PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap())
                     }
                 },
                 GeneratorState::Complete(ret) => return ret,
