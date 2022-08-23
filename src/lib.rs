@@ -197,6 +197,100 @@ where
     }
 }
 
+pub fn transform0<
+    G1,
+    R,
+    E,
+    H,
+    PreEs,
+    HandlerEs,
+    PostEs,
+    EffIndex,
+    PreIs,
+    HandlerIs,
+    PostIs,
+    I1Index,
+    BeginIndex1,
+    BeginIndex2,
+    BeginIndex3,
+    SubsetIndices1,
+    SubsetIndices2,
+    EmbedIndices1,
+    EmbedIndices2,
+    EmbedIndices3,
+>(
+    g: G1,
+    handler: impl FnMut(E) -> H,
+) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+where
+    E: Effect,
+    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
+    PreEs: InjectionList<List = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
+    HandlerEs: InjectionList<List = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
+    PostEs: InjectionList<List = PostIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
+    PreIs: CoprodInjector<Begin, BeginIndex1>
+        + CoprodUninjector<Tagged<E::Injection, E>, I1Index, Remainder = PostIs>,
+    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
+    PostIs: CoprodInjector<Begin, BeginIndex3>
+        + CoproductSubsetter<HandlerIs, SubsetIndices1>
+        + CoproductSubsetter<PostIs, SubsetIndices2>
+        + CoproductEmbedder<PreIs, EmbedIndices3>,
+    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+{
+    transform(g, handler)
+}
+
+pub fn transform1<
+    G1,
+    R,
+    E1,
+    E2,
+    H,
+    PreEs,
+    PreHandleEs,
+    HandlerEs,
+    E1Index,
+    PreIs,
+    PreHandleIs,
+    HandlerIs,
+    I1Index,
+    BeginIndex1,
+    BeginIndex2,
+    BeginIndex3,
+    SubsetIndices1,
+    SubsetIndices2,
+    EmbedIndices1,
+    EmbedIndices2,
+    EmbedIndices3,
+>(
+    g: G1,
+    handler: impl FnMut(E1) -> H,
+) -> impl Generator<
+    Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>,
+    Yield = Coproduct<E2, PreHandleEs>,
+    Return = R,
+>
+where
+    E1: Effect,
+    E2: Effect,
+    H: Generator<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
+    PreEs: InjectionList<List = PreIs> + CoprodUninjector<E1, E1Index, Remainder = PreHandleEs>,
+    PreHandleEs: InjectionList<List = PreHandleIs>
+        + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices1>,
+    HandlerEs: InjectionList<List = HandlerIs>
+        + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices2>,
+    PreIs: CoprodInjector<Begin, BeginIndex1>
+        + CoprodUninjector<Tagged<E1::Injection, E1>, I1Index, Remainder = PreHandleIs>,
+    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices3>,
+    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
+    Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>: CoprodInjector<Begin, BeginIndex3>
+        + CoproductSubsetter<HandlerIs, SubsetIndices1>
+        + CoproductSubsetter<PreHandleIs, SubsetIndices2>,
+    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+{
+    transform(g, handler)
+}
+
 pub async fn run_async<Eff, G, R, H, Fut>(mut g: G, mut handler: H) -> G::Return
 where
     Eff: Effect,
