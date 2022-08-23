@@ -135,9 +135,9 @@ pub fn transform<
     InjIndex,
     SubsetIndices1,
     SubsetIndices2,
+    EmbedIndices1,
     EmbedIndices2,
     EmbedIndices3,
-    EmbedIndices4,
 >(
     mut g: G1,
     mut handler: impl FnMut(E) -> H,
@@ -146,12 +146,12 @@ where
     E: Effect,
     H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
     PreEs: InjectionList<List = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
-    PreHandleEs: InjectionList<List = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
-    HandlerEs: InjectionList<List = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices3>,
+    PreHandleEs: InjectionList<List = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
+    HandlerEs: InjectionList<List = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
     PostEs: InjectionList<List = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex1>
         + CoprodUninjector<Tagged<E::Injection, E>, InjIndex, Remainder = PreHandleIs>,
-    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices4>,
+    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices3>,
     HandlerIs: CoprodInjector<Begin, BeginIndex2>,
     PostIs: CoprodInjector<Begin, BeginIndex3>
         + CoproductSubsetter<
