@@ -3,6 +3,7 @@
 #![feature(pin_macro)]
 #![no_std]
 
+pub mod functor_eff;
 pub mod injection;
 pub mod macro_impl;
 
