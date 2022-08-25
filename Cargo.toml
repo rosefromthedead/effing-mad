@@ -5,6 +5,8 @@ members = ["effing-macros"]
 name = "effing-mad"
 version = "0.1.0"
 edition = "2021"
+authors = ["Rose Hudson <cv21874@bristol.ac.uk>"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 effing-macros = { path = "effing-macros" }
