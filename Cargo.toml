@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 effing-macros = { path = "effing-macros" }
-frunk = "0.4.0"
+frunk = { version = "0.4.0", default-features = false }
 
 # for http example
 futures = { version = "0.3.23", optional = true, default-features = false }
