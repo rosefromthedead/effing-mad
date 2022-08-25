@@ -1,3 +1,6 @@
+*Long story short, if we're being generous, I solved the function colouring problem. Stick around
+to find out how.*
+
 # effing-mad, an effect library for Rust
 This library brings algebraic effects and effect handlers to Rust, by providing traits and macros
 that allow writing effectful code in more or less the same style as Rust's existing `async`
@@ -22,7 +25,7 @@ that performs I/O can be called from either a regular `fn` or an `async fn`, and
 <sup>\* `effing-mad` not guaranteed to become popular. Use at own risk.</sup>
 
 This whole mess can be seen in action in the [`examples/`](./examples/) directory. Check out the
-"basic" example first, unless you're really smart and brave.
+"basic" example first, unless you're really smart or brave or something.
 
 ## why
 *TL;DR: API experimentation and fun*
@@ -30,19 +33,13 @@ This whole mess can be seen in action in the [`examples/`](./examples/) director
 I saw [a post](https://blog.rust-lang.org/inside-rust/2022/07/27/keyword-generics.html) about the
 recent efforts to make functions be usable from both async and sync contexts. The authors also
 wrote about the desire for higher-order functions such as `Option::map` to be able to be
-asynchronous, optional, fallible or a bunch of other... is there an echo in here? I already
-explained how I solved that, without running into Rust's current problem of having functions like
-`try_async_map` which are manually specialised to a certain set of effects.
+asynchronous, optional, fallible or a bunch of other adjectives - without having to write a
+specialised function like `try_async_map` for each set of effects. This is the problem I was talking
+about last paragraph, where I also explain how an effect system could solve it.
 
-In the FAQ of the post, they answered "are you building an effect system?" with "not really", but
-they never explained why not. So I did it instead.
-
-## features
-* define custom effect types
-* group together effects into one type using `effects!` macro ([see example](./examples/effects_macro.rs))
-* handle effects one at a time
-* handle effects using effectful handlers?!? (`transform`)
-* *common effects and default handlers for them* - coming soon!
+Knowing this, I was surprised to see that in the FAQ of the post they answered "are you building
+an effect system?" with "not really". They never explained why not! So I did it instead, because
+I wanted to see what would happen.
 
 ## how cool is it?
 effing-mad is cool. Rad, even. Check out all these cool things it has:
