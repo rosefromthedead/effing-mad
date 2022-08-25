@@ -17,10 +17,11 @@ fn main() {
 
 // very complex and powerful API
 effing_mad::effects! {
-    HttpRequest {
+    http::HttpRequest {
         fn get(url: &'static str) -> String;
     }
 }
+use http::HttpRequest;
 
 // this function does not specify whether the request happens synchronously or asynchronously
 #[effectful(HttpRequest)]
@@ -31,7 +32,7 @@ fn example() -> usize {
 
 async fn interesting_and_useful() {
     let handler = handler! {
-        async HttpRequest,
+        async http::HttpRequest,
         get(url) => {
             let body = reqwest::get(url).await.unwrap().text().await.unwrap();
             ControlFlow::Continue(body)
@@ -48,7 +49,7 @@ async fn interesting_and_useful() {
 
 fn boring_and_old_fashioned() {
     let handler = handler! {
-        HttpRequest,
+        http::HttpRequest,
         get(url) => {
             let body = reqwest::blocking::get(url).unwrap().text().unwrap();
             ControlFlow::Continue(body)

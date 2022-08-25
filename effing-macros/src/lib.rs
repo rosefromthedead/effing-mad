@@ -373,6 +373,8 @@ pub fn handler(input: TokenStream) -> TokenStream {
         {
             use #mod_name::*;
             #moveness |eff: #eff_name #generics| #asyncness {
+                // Force moving `eff` into this possibly-async block
+                let eff = eff;
                 match eff {
                     #(
                     #eff_name::#eff(#(#arg_name),*) => match #breaker {
