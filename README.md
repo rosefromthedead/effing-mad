@@ -1,5 +1,6 @@
-*Long story short, if we're being generous, I solved the function colouring problem. Stick around
-to find out how.*
+*Long story short, this library solves the function colouring problem and some other stuff that the
+Keyword Generics Initiative is looking at. It's an experiment in how an effect system could fit into
+Rust.*
 
 # effing-mad, an effect library for Rust
 This library brings algebraic effects and effect handlers to Rust, by providing traits and macros
