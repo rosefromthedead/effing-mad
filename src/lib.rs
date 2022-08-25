@@ -30,7 +30,7 @@ where
 {
     let pinned = core::pin::pin!(f);
     match pinned.resume(Coproduct::Inl(Begin)) {
-        GeneratorState::Yielded(_) => unreachable!(),
+        GeneratorState::Yielded(never) => match never {},
         GeneratorState::Complete(ret) => ret,
     }
 }
@@ -306,10 +306,16 @@ where
         // safety: see handle() - remember that futures are pinned in the same way as generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(inj) {
-            GeneratorState::Yielded(eff) => match handler(eff.take().unwrap()).await {
-                ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
-                ControlFlow::Break(ret) => return ret,
-            },
+            GeneratorState::Yielded(eff) => {
+                let eff: Eff = match eff.uninject() {
+                    Ok(eff) => eff,
+                    Err(never) => match never {},
+                };
+                match handler(eff).await {
+                    ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
+                    ControlFlow::Break(ret) => return ret,
+                }
+            }
             GeneratorState::Complete(ret) => return ret,
         }
     }
