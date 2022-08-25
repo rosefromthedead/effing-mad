@@ -64,8 +64,8 @@ because all your effect types want to hold the pure thing inside themselves, but
 pure thing going on. This means you have to use monad transformers. I don't really understand monad
 transformers, therefore they are bad.
 
-On the other hand, I do understand algebraic effects, and therefore they are good. Download
-effing-mad today!
+On the other hand, I do understand algebraic effects, and therefore they are good. Also they compose
+far more easily and in my opinion are more intuitive. Download effing-mad today!
 
 ## more facts - to do with rust this time
 effing-mad uses generators. The implementation of it was made far easier by the lang team already
