@@ -33,7 +33,7 @@ This whole mess can be seen in action in the [`examples/`](./examples/) director
 I saw [a post](https://blog.rust-lang.org/inside-rust/2022/07/27/keyword-generics.html) about the
 recent efforts to make functions be usable from both async and sync contexts. The authors also
 wrote about the desire for higher-order functions such as `Option::map` to be able to be
-asynchronous, optional, fallible or a bunch of other adjectives - without having to write a
+asynchronous, optional, fallible, or a bunch of other adjectives - without having to write a
 specialised function like `try_async_map` for each set of effects. This is the problem I was talking
 about last paragraph, where I also explain how an effect system could solve it.
 
