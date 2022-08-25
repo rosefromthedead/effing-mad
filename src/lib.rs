@@ -3,6 +3,8 @@
 #![feature(pin_macro)]
 #![no_std]
 
+pub use frunk;
+
 pub mod functor_eff;
 pub mod injection;
 pub mod macro_impl;

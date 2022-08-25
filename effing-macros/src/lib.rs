@@ -17,7 +17,7 @@ fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
         {
             use ::core::ops::{Generator, GeneratorState};
-            use ::frunk::coproduct::Coproduct;
+            use ::effing_mad::frunk::coproduct::Coproduct;
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
@@ -63,7 +63,7 @@ impl syn::fold::Fold for Effectful {
                         let marker = ::effing_mad::macro_impl::mark(&into_effect);
                         let effect = ::effing_mad::IntoEffect::into_effect(into_effect);
                         let marker2 = ::effing_mad::macro_impl::mark(&effect);
-                        let injs = yield ::frunk::coproduct::Coproduct::inject(effect);
+                        let injs = yield ::effing_mad::frunk::coproduct::Coproduct::inject(effect);
                         let injs = ::effing_mad::macro_impl::get_inj(injs, marker2).unwrap();
                         ::effing_mad::macro_impl::get_inj2(injs, marker).unwrap()
                     }
@@ -79,7 +79,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
     let effect_names = &effects.effects;
     let mut yield_type = quote! {
-        ::frunk::coproduct::CNil
+        ::effing_mad::frunk::coproduct::CNil
     };
     for effect in effect_names {
         yield_type = quote! {
