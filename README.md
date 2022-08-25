@@ -1,0 +1,80 @@
+# effing-mad, an effect library for Rust
+This library brings algebraic effects and effect handlers to Rust, by providing traits and macros
+that allow writing effectful code in more or less the same style as Rust's existing `async`
+functions.
+
+## what does that mean
+Effectful functions that use this library can explicitly suspend (`yield`) their execution and pass
+control back to their callers, who later resume the function. Data can be carried through both of
+these transitions, and this data is strongly typed in the same way as one would expect in Rust.
+
+The data passed out of an effectful function specifies an action. It is given to an effect handler,
+which performs the action and passes the result back into the effectful function. Then, execution
+of the effectful function continues. It's like calling functions, but upside down.
+
+As it turns out, calling functions upside down has some fantastic advantages. Since effects are
+handled inside the caller instead of the callee, there are no bounds on whether they are handled
+asynchronously, optionally, fallibly, or a bunch of other adverbs. On top of that, different
+callers can use different handlers on the same effectful function, meaning an effectful function
+that performs I/O can be called from either a regular `fn` or an `async fn`, and do the I/O in the
+"natural" way in both. No more distinction between `popular_crate` and `popular_crate::blocking`!\*
+
+<sup>\* `effing-mad` not guaranteed to become popular. Use at own risk.</sup>
+
+This whole mess can be seen in action in the [`examples/`](./examples/) directory. Check out the
+"basic" example first, unless you're really smart and brave.
+
+## why
+*TL;DR: API experimentation and fun*
+
+I saw [a post](https://blog.rust-lang.org/inside-rust/2022/07/27/keyword-generics.html) about the
+recent efforts to make functions be usable from both async and sync contexts. The authors also
+wrote about the desire for higher-order functions such as `Option::map` to be able to be
+asynchronous, optional, fallible or a bunch of other... is there an echo in here? I already
+explained how I solved that, without running into Rust's current problem of having functions like
+`try_async_map` which are manually specialised to a certain set of effects.
+
+In the FAQ of the post, they answered "are you building an effect system?" with "not really", but
+they never explained why not. So I did it instead.
+
+## features
+* define custom effect types
+* group together effects into one type using `effects!` macro ([see example](./examples/effects_macro.rs))
+* handle effects one at a time
+* handle effects using effectful handlers?!? (`transform`)
+* *common effects and default handlers for them* - coming soon!
+
+## how cool is it?
+effing-mad is cool. Rad, even. Check out all these cool things it has:
+* unstable compiler features (generators, generator_trait)
+* a function with 22 type arguments
+* `#![no_std]`
+* scary category theory words (coproduct! 👻)
+* procedural macros
+* ~~declarative macros~~ (used to have them, but I needed them to generate idents which they can't do :( )
+* `unsafe`
+* `Pin`, which means I'm really good at Rust
+* a dependency called "frunk". hehehehe
+
+a market analysis conducted in 2022 determined that no other library has as many cool things as
+effing-mad, except maybe core. I mean, core *invented* Pin, which is cheating, so really I win.
+
+## some other facts
+In pure functional languages like Haskell, side effects such as I/O are traditionally encoded in
+the language and its type system using monads. These are types which hold the effects and/or the
+result of the pure computation. So, if you want to have multiple types of effect, things get tricky
+because all your effect types want to hold the pure thing inside themselves, but you only have one
+pure thing going on. This means you have to use monad transformers. I don't really understand monad
+transformers, therefore they are bad.
+
+On the other hand, I do understand algebraic effects, and therefore they are good. Download
+effing-mad today!
+
+## more facts - to do with rust this time
+effing-mad uses generators. The implementation of it was made far easier by the lang team already
+needing functions that can be suspended and resumed, because that caused them to invent generators.
+Even though they were made for the compiler to be able to compile async fns, they're way more
+general than async fns are.
+
+Generators are used by the compiler, but directly using them has not been stabilised yet because no
+one really needs it to be. That's why you need to use a nightly compiler to use effing-mad.
