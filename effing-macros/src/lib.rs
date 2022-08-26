@@ -111,11 +111,11 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         #vis #constness #unsafety
         fn #ident #generics(#inputs)
         -> impl ::core::ops::Generator<
-            <#yield_type as ::effing_mad::injection::InjectionList>::List,
+            <#yield_type as ::effing_mad::injection::EffectList>::Injections,
             Yield = #yield_type,
             Return = #return_type
         > {
-            move |_begin: <#yield_type as ::effing_mad::injection::InjectionList>::List| {
+            move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
                 #new_block
             }
         }

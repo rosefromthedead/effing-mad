@@ -1,10 +1,6 @@
 use core::marker::PhantomData;
 
-use frunk::{
-    coproduct::{CNil, CoprodInjector},
-    indices::{Here, There},
-    Coproduct,
-};
+use frunk::{coproduct::CNil, Coproduct};
 
 use crate::Effect;
 
@@ -26,20 +22,14 @@ impl<T, Tag> Tagged<T, Tag> {
     }
 }
 
-pub trait InjectionList {
-    type Inj;
-    type BeginIndex;
-    type List: CoprodInjector<Self::Inj, Here> + CoprodInjector<Begin, Self::BeginIndex>;
+pub trait EffectList {
+    type Injections;
 }
 
-impl InjectionList for CNil {
-    type Inj = Begin;
-    type BeginIndex = Here;
-    type List = Coproduct<Begin, CNil>;
+impl EffectList for CNil {
+    type Injections = Coproduct<Begin, CNil>;
 }
 
-impl<E: Effect, Is: InjectionList> InjectionList for Coproduct<E, Is> {
-    type Inj = Tagged<E::Injection, E>;
-    type BeginIndex = There<Is::BeginIndex>;
-    type List = Coproduct<Tagged<E::Injection, E>, Is::List>;
+impl<E: Effect, Es: EffectList> EffectList for Coproduct<E, Es> {
+    type Injections = Coproduct<Tagged<E::Injection, E>, Es::Injections>;
 }

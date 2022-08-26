@@ -3,7 +3,7 @@ use core::{
     pin::Pin,
 };
 
-use crate::injection::InjectionList;
+use crate::injection::EffectList;
 
 pub trait IntoEffectful: Sized {
     fn into_effectful(self) -> Effectful<Self> {
@@ -19,11 +19,11 @@ impl<T> Effectful<Option<T>> {
     pub fn map<F, G, Effs, U>(
         self,
         f: F,
-    ) -> impl Generator<Effs::List, Yield = Effs, Return = Option<U>>
+    ) -> impl Generator<Effs::Injections, Yield = Effs, Return = Option<U>>
     where
         F: FnOnce(T) -> G,
-        G: Generator<Effs::List, Yield = Effs, Return = U>,
-        Effs: InjectionList,
+        G: Generator<Effs::Injections, Yield = Effs, Return = U>,
+        Effs: EffectList,
     {
         move |mut injs| {
             match self.0 {
@@ -48,11 +48,11 @@ impl<T, E> Effectful<Result<T, E>> {
     pub fn map<F, G, Effs, U>(
         self,
         f: F,
-    ) -> impl Generator<Effs::List, Yield = Effs, Return = Result<U, E>>
+    ) -> impl Generator<Effs::Injections, Yield = Effs, Return = Result<U, E>>
     where
         F: FnOnce(T) -> G,
-        G: Generator<Effs::List, Yield = Effs, Return = U>,
-        Effs: InjectionList,
+        G: Generator<Effs::Injections, Yield = Effs, Return = U>,
+        Effs: EffectList,
     {
         move |mut injs| {
             match self.0 {
@@ -75,11 +75,11 @@ impl<T, E> Effectful<Result<T, E>> {
     pub fn map_err<O, G, Effs, F>(
         self,
         op: O,
-    ) -> impl Generator<Effs::List, Yield = Effs, Return = Result<T, F>>
+    ) -> impl Generator<Effs::Injections, Yield = Effs, Return = Result<T, F>>
     where
         O: FnOnce(E) -> G,
-        G: Generator<Effs::List, Yield = Effs, Return = F>,
-        Effs: InjectionList,
+        G: Generator<Effs::Injections, Yield = Effs, Return = F>,
+        Effs: EffectList,
     {
         move |mut injs| {
             match self.0 {
