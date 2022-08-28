@@ -1,3 +1,5 @@
+//! Effectful operations on common functor types.
+
 use core::{
     ops::{Generator, GeneratorState},
     pin::Pin,

@@ -22,8 +22,15 @@ use frunk::{
 pub use effing_macros::{effectful, effects, handler};
 use injection::{Begin, EffectList, Tagged};
 
+/// An uninhabited type that can never be constructed.
+///
+/// Substitutes for `!` until that is stabilised.
 pub enum Never {}
 
+/// Run an effectful computation that has no effects.
+///
+/// Effectful computations are generators, but if they have no effects, it is guaranteed that they
+/// will never yield. Therefore they can be run by resuming them once. This function does that.
 pub fn run<F, R>(mut f: F) -> R
 where
     F: Generator<Coproduct<Begin, CNil>, Yield = CNil, Return = R>,
@@ -35,12 +42,19 @@ where
     }
 }
 
+/// A side effect that must be handled by the caller of an effectful computation, or propagated up
+/// the call stack.
 pub trait Effect {
+    /// The type of value that running this effect gives.
     type Injection;
 }
 
+/// Types that can be used with the `yield` syntax sugar inside an `#[effectful(...)]` function.
 pub trait IntoEffect {
     type Effect: Effect;
+    /// The injection that comes from running the effect represented by this type. Sometimes it is
+    /// more specific than/a certain variant of `<Self::Effect>::Injection`. Conversion between the
+    /// two is provided by `inject` and `uninject`.
     type Injection;
 
     fn into_effect(self) -> Self::Effect;
@@ -63,6 +77,8 @@ impl<E: Effect> IntoEffect for E {
     }
 }
 
+/// Create a new effectful computation by applying a pure function to the return value of an
+/// existing computation.
 pub fn map<E, I, T, U>(
     mut g: impl Generator<I, Yield = E, Return = T>,
     f: impl FnOnce(T) -> U,
@@ -79,6 +95,14 @@ pub fn map<E, I, T, U>(
     }
 }
 
+/// Apply one pure effect handler to an effectful computation.
+///
+/// When given an effectful computation with effects (A, B, C) and a handler for effect C, this
+/// returns a new effectful computation with effects (A, B). Handlers can choose for each instance
+/// of their effect whether to resume the computation, passing in a value (injection) or to force a
+/// return from the computation. This is done using
+/// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
+/// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
 pub fn handle<G, R, E, PreEs, PostEs, EffIndex, PreIs, PostIs, BeginIndex, InjIndex, EmbedIndices>(
     mut g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
@@ -118,6 +142,44 @@ where
     }
 }
 
+/// Handle the last effect in a computation using an async handler.
+///
+/// This allows you to turn effectful computations into async fns. Only the last remaining effect
+/// can be handled asynchronously because it is not possible to construct a computation that is
+/// both effectful and asynchronous.
+pub async fn handle_async<Eff, G, R, H, Fut>(mut g: G, mut handler: H) -> G::Return
+where
+    Eff: Effect,
+    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff), Return = R>,
+    H: FnMut(Eff) -> Fut,
+    Fut: Future<Output = ControlFlow<R, Eff::Injection>>,
+{
+    let mut inj = Coproduct::inject(Begin);
+    loop {
+        // safety: see handle() - remember that futures are pinned in the same way as generators
+        let pinned = unsafe { Pin::new_unchecked(&mut g) };
+        match pinned.resume(inj) {
+            GeneratorState::Yielded(eff) => {
+                let eff: Eff = match eff.uninject() {
+                    Ok(eff) => eff,
+                    Err(never) => match never {},
+                };
+                match handler(eff).await {
+                    ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
+                    ControlFlow::Break(ret) => return ret,
+                }
+            }
+            GeneratorState::Complete(ret) => return ret,
+        }
+    }
+}
+
+/// Handle one effect in the computation `g` by running other effects.
+///
+/// It is not possible to get rustc to infer the type of `PostEs`, so calling this function almost
+/// always requires annotating that - which means you also have to annotate 21 underscores.
+/// For this reason, prefer to use [`transform0`] or [`transform1`] instead, which should not
+/// require annotation.
 pub fn transform<
     G1,
     R,
@@ -200,6 +262,12 @@ where
     }
 }
 
+/// Handle one effect of `g` by running other effects that it already uses.
+///
+/// This function is a special case of [`transform`] for when the handler does not introduce any
+/// effects on top of the ones from `g` that it's not handling.
+///
+/// For introducing a new effect, see [`transform1`].
 pub fn transform0<
     G1,
     R,
@@ -243,6 +311,14 @@ where
     transform(g, handler)
 }
 
+/// Handle one effect of `g` by running a new effect.
+///
+/// This function is a special case of [`transform`] for when the handler introduces one effect on
+/// top of the ones from `g` that it's not handling.
+///
+/// It is possible for the handler to run effects from `g` as well as the effect that it introduces.
+///
+/// To transform without introducing any effects, see [`transform0`].
 pub fn transform1<
     G1,
     R,
@@ -292,31 +368,4 @@ where
     G1: Generator<PreIs, Yield = PreEs, Return = R>,
 {
     transform(g, handler)
-}
-
-pub async fn run_async<Eff, G, R, H, Fut>(mut g: G, mut handler: H) -> G::Return
-where
-    Eff: Effect,
-    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff), Return = R>,
-    H: FnMut(Eff) -> Fut,
-    Fut: Future<Output = ControlFlow<R, Eff::Injection>>,
-{
-    let mut inj = Coproduct::inject(Begin);
-    loop {
-        // safety: see handle() - remember that futures are pinned in the same way as generators
-        let pinned = unsafe { Pin::new_unchecked(&mut g) };
-        match pinned.resume(inj) {
-            GeneratorState::Yielded(eff) => {
-                let eff: Eff = match eff.uninject() {
-                    Ok(eff) => eff,
-                    Err(never) => match never {},
-                };
-                match handler(eff).await {
-                    ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
-                    ControlFlow::Break(ret) => return ret,
-                }
-            }
-            GeneratorState::Complete(ret) => return ret,
-        }
-    }
 }

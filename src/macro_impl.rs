@@ -1,3 +1,5 @@
+//! Implementation details of the macros exported by `effing_mad`.
+
 use core::marker::PhantomData;
 
 use frunk::{
@@ -7,7 +9,6 @@ use frunk::{
 
 use crate::{injection::Tagged, Effect, IntoEffect};
 
-/// Construct a PhantomData with the type of an expression
 #[must_use]
 pub fn mark<T>(_: &T) -> PhantomData<T> {
     PhantomData
