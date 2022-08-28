@@ -3,7 +3,7 @@
 
 use std::ops::ControlFlow;
 
-use effing_mad::{effectful, handle, handler, run, run_async};
+use effing_mad::{effectful, handle, handler, run, handle_async};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -39,8 +39,8 @@ async fn interesting_and_useful() {
         },
     };
 
-    let req1 = run_async(example(), handler);
-    let req2 = run_async(example(), handler);
+    let req1 = handle_async(example(), handler);
+    let req2 = handle_async(example(), handler);
 
     // asyncified effectful functions can be composed in the same ways as traditional futures
     let (res1, res2) = futures::future::join(req1, req2).await;
