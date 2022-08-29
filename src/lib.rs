@@ -20,7 +20,7 @@ use frunk::{
 };
 
 pub use effing_macros::{effectful, effects, handler};
-use injection::{Begin, EffectList, Tagged};
+use injection::{Begin, Tagged};
 
 /// An uninhabited type that can never be constructed.
 ///
@@ -47,6 +47,21 @@ where
 pub trait Effect {
     /// The type of value that running this effect gives.
     type Injection;
+}
+
+pub trait EffectSet {
+    type Coprod;
+    type Injections;
+}
+
+impl EffectSet for CNil {
+    type Coprod = CNil;
+    type Injections = Coproduct<Begin, CNil>;
+}
+
+impl<E: Effect, Tail: EffectSet> EffectSet for Coproduct<E, Tail> {
+    type Coprod = Self;
+    type Injections = Coproduct<Tagged<E::Injection, E>, <Tail as EffectSet>::Injections>;
 }
 
 /// Types that can be used with the `yield` syntax sugar inside an `#[effectful(...)]` function.
@@ -111,8 +126,8 @@ pub fn handle<G, R, E, PreEs, PostEs, EffIndex, PreIs, PostIs, BeginIndex, InjIn
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>
 where
     E: Effect,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
-    PostEs: EffectList<Injections = PostIs>,
+    PreEs: EffectSet<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
+    PostEs: EffectSet<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
     G: Generator<PreIs, Yield = PreEs, Return = R>,
@@ -212,10 +227,10 @@ pub fn transform<
 where
     E: Effect,
     H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
-    PreHandleEs: EffectList<Injections = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
-    HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
-    PostEs: EffectList<Injections = PostIs>,
+    PreEs: EffectSet<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
+    PreHandleEs: EffectSet<Injections = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
+    HandlerEs: EffectSet<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
+    PostEs: EffectSet<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex1>
         + CoprodUninjector<Tagged<E::Injection, E>, InjIndex, Remainder = PreHandleIs>,
     PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices3>,
@@ -298,9 +313,9 @@ pub fn transform0<
 where
     E: Effect,
     H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
-    HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
-    PostEs: EffectList<Injections = PostIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
+    PreEs: EffectSet<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
+    HandlerEs: EffectSet<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
+    PostEs: EffectSet<Injections = PostIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
     PreIs: CoprodInjector<Begin, BeginIndex1>
         + CoprodUninjector<Tagged<E::Injection, E>, I1Index, Remainder = PostIs>,
     HandlerIs: CoprodInjector<Begin, BeginIndex2>,
@@ -355,10 +370,10 @@ where
     E1: Effect,
     E2: Effect,
     H: Generator<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E1, E1Index, Remainder = PreHandleEs>,
-    PreHandleEs: EffectList<Injections = PreHandleIs>
+    PreEs: EffectSet<Injections = PreIs> + CoprodUninjector<E1, E1Index, Remainder = PreHandleEs>,
+    PreHandleEs: EffectSet<Injections = PreHandleIs>
         + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices1>,
-    HandlerEs: EffectList<Injections = HandlerIs>
+    HandlerEs: EffectSet<Injections = HandlerIs>
         + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices2>,
     PreIs: CoprodInjector<Begin, BeginIndex1>
         + CoprodUninjector<Tagged<E1::Injection, E1>, I1Index, Remainder = PreHandleIs>,

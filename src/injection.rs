@@ -2,10 +2,6 @@
 
 use core::marker::PhantomData;
 
-use frunk::{coproduct::CNil, Coproduct};
-
-use crate::Effect;
-
 /// Before an effectful computation has started, there is no injection to pass in, because no
 /// effects have been run yet. However, due to the signature of
 /// [`Generator::resume`](core::ops::Generator::resume), it is necessary to pass one in anyway.
@@ -26,21 +22,4 @@ impl<T, Tag> Tagged<T, Tag> {
     pub fn untag(self) -> T {
         self.0
     }
-}
-
-/// Used for determining the list of injection types for a certain list of effect types.
-///
-/// All effect lists must have [`Begin`] in their injection lists, and injections in the list must
-/// be [`Tagged`] with their effect type. This trait makes it easy to name the correct injection
-/// list according to these rules.
-pub trait EffectList {
-    type Injections;
-}
-
-impl EffectList for CNil {
-    type Injections = Coproduct<Begin, CNil>;
-}
-
-impl<E: Effect, Es: EffectList> EffectList for Coproduct<E, Es> {
-    type Injections = Coproduct<Tagged<E::Injection, E>, Es::Injections>;
 }

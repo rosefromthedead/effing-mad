@@ -103,15 +103,10 @@ impl syn::fold::Fold for Effectful {
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
-    let effect_names = &effects.effects;
-    let mut yield_type = quote! {
-        ::effing_mad::frunk::coproduct::CNil
+    let effect_names = &effects.effects.iter().collect::<Vec<_>>();
+    let yield_type = quote! {
+        <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::EffectSet>::Coprod
     };
-    for effect in effect_names {
-        yield_type = quote! {
-            <#effect as ::effing_mad::macro_impl::EffectSet<#yield_type>>::Out
-        };
-    }
     let ItemFn {
         attrs,
         vis,
@@ -137,11 +132,11 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         #vis #constness #unsafety
         fn #ident #generics(#inputs)
         -> impl ::core::ops::Generator<
-            <#yield_type as ::effing_mad::injection::EffectList>::Injections,
+            <#yield_type as ::effing_mad::EffectSet>::Injections,
             Yield = #yield_type,
             Return = #return_type
         > {
-            move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
+            move |_begin: <#yield_type as ::effing_mad::EffectSet>::Injections| {
                 #new_block
             }
         }

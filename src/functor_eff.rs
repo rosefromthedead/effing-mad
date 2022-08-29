@@ -5,7 +5,7 @@ use core::{
     pin::Pin,
 };
 
-use crate::injection::EffectList;
+use crate::EffectSet;
 
 pub trait IntoEffectful: Sized {
     fn into_effectful(self) -> Effectful<Self> {
@@ -25,7 +25,7 @@ impl<T> Effectful<Option<T>> {
     where
         F: FnOnce(T) -> G,
         G: Generator<Effs::Injections, Yield = Effs, Return = U>,
-        Effs: EffectList,
+        Effs: EffectSet,
     {
         move |mut injs| {
             match self.0 {
@@ -54,7 +54,7 @@ impl<T, E> Effectful<Result<T, E>> {
     where
         F: FnOnce(T) -> G,
         G: Generator<Effs::Injections, Yield = Effs, Return = U>,
-        Effs: EffectList,
+        Effs: EffectSet,
     {
         move |mut injs| {
             match self.0 {
@@ -81,7 +81,7 @@ impl<T, E> Effectful<Result<T, E>> {
     where
         O: FnOnce(E) -> G,
         G: Generator<Effs::Injections, Yield = Effs, Return = F>,
-        Effs: EffectList,
+        Effs: EffectSet,
     {
         move |mut injs| {
             match self.0 {

@@ -2,10 +2,7 @@
 
 use core::marker::PhantomData;
 
-use frunk::{
-    coproduct::{CNil, CoprodUninjector},
-    Coproduct,
-};
+use frunk::coproduct::CoprodUninjector;
 
 use crate::{injection::Tagged, Effect, IntoEffect};
 
@@ -28,24 +25,4 @@ where
     E: Effect<Injection = Injs>,
 {
     I::uninject(injs)
-}
-
-pub trait EffectSet<Tail> {
-    type Out;
-}
-
-impl<E: Effect, Tail> EffectSet<Tail> for E {
-    type Out = Coproduct<E, Tail>;
-}
-
-pub trait Prepend<Tail> {
-    type Out;
-}
-
-impl<Tail> Prepend<Tail> for CNil {
-    type Out = Tail;
-}
-
-impl<Head, Tail1: Prepend<Tail2>, Tail2> Prepend<Tail2> for Coproduct<Head, Tail1> {
-    type Out = Coproduct<Head, Tail1::Out>;
 }
