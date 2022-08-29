@@ -59,6 +59,8 @@ pub trait IntoEffect {
 
     fn into_effect(self) -> Self::Effect;
     fn inject(inj: Self::Injection) -> <Self::Effect as Effect>::Injection;
+    /// This should only be None if the injection does not match this sub-effect at all. This can
+    /// happen when a hand-written effect handler is used.
     fn uninject(injs: <Self::Effect as Effect>::Injection) -> Option<Self::Injection>;
 }
 
