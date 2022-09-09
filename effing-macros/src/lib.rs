@@ -2,7 +2,6 @@
 #![feature(let_else)]
 
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     braced, parenthesized,
@@ -103,15 +102,10 @@ impl syn::fold::Fold for Effectful {
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
-    let effect_names = &effects.effects;
-    let mut yield_type = quote! {
-        ::effing_mad::frunk::coproduct::CNil
+    let effect_names = effects.effects.iter();
+    let yield_type = quote! {
+        <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
     };
-    for effect in effect_names {
-        yield_type = quote! {
-            <#effect as ::effing_mad::macro_impl::EffectSet<#yield_type>>::Out
-        };
-    }
     let ItemFn {
         attrs,
         vis,
@@ -164,6 +158,7 @@ impl Parse for EffectArg {
 }
 
 struct Effect {
+    generics: Generics,
     name: Ident,
     args: Vec<EffectArg>,
     ret: Type,
@@ -172,6 +167,7 @@ struct Effect {
 impl Parse for Effect {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         <Token![fn]>::parse(input)?;
+        let generics = input.parse()?;
         let name = input.parse()?;
 
         let content;
@@ -182,14 +178,18 @@ impl Parse for Effect {
         <Token![->]>::parse(input)?;
         let ret = input.parse()?;
 
-        Ok(Effect { name, args, ret })
+        Ok(Effect {
+            generics,
+            name,
+            args,
+            ret,
+        })
     }
 }
 
 struct Effects {
     vis: Visibility,
-    mod_name: Ident,
-    eff_name: Ident,
+    group_name: Ident,
     generics: Generics,
     effects: Punctuated<Effect, Token![;]>,
 }
@@ -197,9 +197,7 @@ struct Effects {
 impl Parse for Effects {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let vis = input.parse()?;
-        let mod_name = input.parse()?;
-        <Token![::]>::parse(input)?;
-        let eff_name = input.parse()?;
+        let group_name = input.parse()?;
         let generics = input.parse()?;
 
         let content;
@@ -208,8 +206,7 @@ impl Parse for Effects {
 
         Ok(Effects {
             vis,
-            mod_name,
-            eff_name,
+            group_name,
             generics,
             effects,
         })
@@ -240,21 +237,12 @@ impl Parse for Effects {
 pub fn effects(input: TokenStream) -> TokenStream {
     let Effects {
         vis,
-        mod_name,
-        eff_name,
+        group_name,
         generics,
         effects,
     } = parse_macro_input!(input as Effects);
-    let injs_name = Ident::new(&format!("{}Injs", eff_name), Span::call_site());
 
-    let variants = effects
-        .iter()
-        .map(|Effect { name, .. }| format_ident!("__{name}"))
-        .collect::<Vec<_>>();
-    let structs = effects
-        .iter()
-        .map(|Effect { name, .. }| format_ident!("__{name}"))
-        .collect::<Vec<_>>();
+    let eff_generics = effects.iter().map(|eff| &eff.generics).collect::<Vec<_>>();
     let eff_names = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
     let phantom_data_tys = generics
         .params
@@ -270,12 +258,6 @@ pub fn effects(input: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
     let phantom_data_tys = quote!(#(#phantom_data_tys),*);
-    let phantom_datas = generics
-        .params
-        .iter()
-        .map(|_| quote!(::core::marker::PhantomData))
-        .collect::<Vec<_>>();
-    let phantom_datas = quote!(#(#phantom_datas),*);
 
     let arg_name = effects
         .iter()
@@ -288,60 +270,27 @@ pub fn effects(input: TokenStream) -> TokenStream {
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
-        /// An effect definition.
-        ///
-        /// To handle this effect, use the `handler!` macro.
-        #vis mod #mod_name {
-            #[allow(non_camel_case_types)]
-            pub enum #eff_name #generics {
-                #(
-                #variants(#(#arg_ty),*)
-                ),*
-            }
+        #vis struct #group_name #generics (#phantom_data_tys);
 
-            #[allow(non_camel_case_types)]
-            pub enum #injs_name #generics {
-                #(
-                #variants(#ret_ty)
-                ),*
-            }
-
-            impl #generics #eff_name #generics {
-                #(
-                pub fn #eff_names(#(#arg_name: #arg_ty),*) -> #structs #generics {
-                    #structs(#(#arg_name,)* #phantom_datas)
-                }
-                )*
-            }
-
-            impl #generics ::effing_mad::Effect for #eff_name #generics {
-                type Injection = #injs_name #generics;
-            }
-
+        impl #generics #group_name #generics {
             #(
-            #[allow(non_camel_case_types)]
-            pub struct #structs #generics(#(#arg_ty,)* #phantom_data_tys);
-
-            impl #generics ::effing_mad::IntoEffect for #structs #generics {
-                type Effect = #eff_name #generics;
-                type Injection = #ret_ty;
-
-                fn into_effect(self) -> Self::Effect {
-                    let #structs(#(#arg_name,)* ..) = self;
-                    #eff_name::#variants(#(#arg_name),*)
-                }
-                fn inject(inj: #ret_ty) -> #injs_name #generics {
-                    #injs_name::#variants(inj)
-                }
-                fn uninject(injs: #injs_name #generics) -> Option<#ret_ty> {
-                    match injs {
-                        #injs_name::#variants(inj) => Some(inj),
-                        _ => None,
-                    }
-                }
+            fn #eff_names(#(#arg_name: #arg_ty),*) -> #eff_names<#eff_generics> {
+                #eff_names(#(#arg_name),*)
             }
             )*
         }
+
+        impl #generics ::effing_mad::EffectGroup for #group_name #generics {
+            type Coprod = ::effing_mad::frunk::Coprod!(#(#eff_names),*);
+        }
+
+        #(
+        #vis struct #eff_names #eff_generics (#(#arg_ty),*);
+
+        impl #eff_generics ::effing_mad::Effect for #eff_names {
+            type Injection = #ret_ty;
+        }
+        )*
     }
     .into()
 }

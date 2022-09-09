@@ -49,6 +49,14 @@ pub trait Effect {
     type Injection;
 }
 
+pub trait EffectGroup {
+    type Effects;
+}
+
+impl<E: Effect> EffectGroup for E {
+    type Effects = Coproduct<E, CNil>;
+}
+
 /// Types that can be used with the `yield` syntax sugar inside an `#[effectful(...)]` function.
 pub trait IntoEffect {
     type Effect: Effect;

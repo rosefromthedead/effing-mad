@@ -7,7 +7,10 @@ use frunk::{
     Coproduct,
 };
 
-use crate::{injection::Tagged, Effect, IntoEffect};
+use crate::{
+    injection::{EffectList, Tagged},
+    Effect, EffectGroup, IntoEffect,
+};
 
 #[must_use]
 pub fn mark<T>(_: &T) -> PhantomData<T> {
@@ -30,12 +33,17 @@ where
     I::uninject(injs)
 }
 
-pub trait EffectSet<Tail> {
-    type Out;
+pub trait FlattenEffects {
+    type Out: EffectList;
 }
 
-impl<E: Effect, Tail> EffectSet<Tail> for E {
-    type Out = Coproduct<E, Tail>;
+impl<G, Tail> FlattenEffects for Coproduct<G, Tail>
+where
+    G: EffectGroup,
+    <G as EffectGroup>::Effects: Prepend<Tail>,
+    <<G as EffectGroup>::Effects as Prepend<Tail>>::Out: EffectList,
+{
+    type Out = <<G as EffectGroup>::Effects as Prepend<Tail>>::Out;
 }
 
 pub trait Prepend<Tail> {
