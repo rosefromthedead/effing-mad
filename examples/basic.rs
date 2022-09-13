@@ -12,22 +12,12 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use core::ops::ControlFlow;
-
 use effing_mad::{effectful, handle, Effect};
 
 fn main() {
-    let cancelled = handle(combined(), |Cancel| ControlFlow::Break(()));
-
-    let logged = handle(cancelled, |Log(msg)| {
-        println!("log: {msg}");
-        ControlFlow::Continue(())
-    });
-
-    let filesystemed = handle(logged, |FileRead(path)| {
-        assert_eq!(path, "~/my passwords.txt");
-        ControlFlow::Continue("monadtransformerssuck".into())
-    });
+    let cancelled = handle!(combined(), Cancel, Cancel => break);
+    let logged = handle!(cancelled, Log<'_>, Log(msg) => println!("log: {msg}"));
+    let filesystemed = handle!(logged, FileRead, FileRead(_name) => "monadtransformerssuck".into());
 
     effing_mad::run(filesystemed);
 }

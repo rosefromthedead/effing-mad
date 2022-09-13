@@ -8,38 +8,33 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use core::ops::ControlFlow;
-use effing_mad::{effectful, handle, handler, run};
+use std::marker::PhantomData;
+
+use effing_mad::{effectful, handle, run};
 
 fn main() {
     let mut state = 34;
-    let handled = handle(
+    let handled = handle!(
         use_state(),
-        handler! {
-            state::State<i32>,
-            get() => ControlFlow::Continue(state),
-            put(v) => {
-                state = v;
-                ControlFlow::Continue(())
-            },
-        },
+        State<i32>,
+        get(_) => state,
+        put(v) => state = v,
     );
     run(handled);
     println!("final value: {}", state);
 }
 
 effing_mad::effects! {
-    state::State<T> {
-        fn get() -> T;
-        fn put(v: T) -> ();
+    State<T> {
+        fn<T> get(_marker: PhantomData<T>) -> T;
+        fn<T> put(v: T) -> ();
     }
 }
 
-use state::State;
 // Rust encourages immutability!
 #[effectful(State<i32>)]
 fn use_state() {
-    let initial = yield State::get();
+    let initial = yield State::get(PhantomData);
     println!("initial value: {}", initial);
     yield State::put(initial + 5);
 }

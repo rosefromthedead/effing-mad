@@ -19,7 +19,7 @@ use frunk::{
     Coprod, Coproduct,
 };
 
-pub use effing_macros::{effectful, effects, handler};
+pub use effing_macros::{effectful, effects, handle};
 use injection::{Begin, EffectList, Tagged};
 
 /// An uninhabited type that can never be constructed.
@@ -105,7 +105,7 @@ pub fn map<E, I, T, U>(
     }
 }
 
-/// Apply one pure effect handler to an effectful computation.
+/// Apply a pure effect handler to an effectful computation.
 ///
 /// When given an effectful computation with effects (A, B, C) and a handler for effect C, this
 /// returns a new effectful computation with effects (A, B). Handlers can choose for each instance
@@ -113,6 +113,8 @@ pub fn map<E, I, T, U>(
 /// return from the computation. This is done using
 /// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
 /// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
+///
+/// For handling multiple effects using one closure, see [`handle!`].
 pub fn handle<G, R, E, PreEs, PostEs, EffIndex, PreIs, PostIs, BeginIndex, InjIndex, EmbedIndices>(
     mut g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
@@ -140,11 +142,52 @@ where
                         ControlFlow::Break(ret) => return ret,
                     },
                     // any other effect
-                    Err(effs) => {
-                        let effs: PostEs = effs;
-                        let inj = yield effs;
-                        injection = inj.embed();
-                    }
+                    Err(effs) => injection = (yield effs).embed(),
+                },
+                GeneratorState::Complete(ret) => return ret,
+            }
+        }
+    }
+}
+
+/// Apply a handler which handles multiple effects.
+///
+/// When given an effectful computation with effects (A, B, C, D) and a handler for effects (A, B),
+/// this function returns a new effectful computation with effects (C, D). Handlers can choose for
+/// each instance of their effects whether to resume the computation, passing in a value (injection)
+/// or to force a return from the computation. This is done using
+/// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
+/// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
+///
+/// Type inference with this function is unlikely to succeed, so it is recommended to use the
+/// [`handle!`] macro, which also provides friendlier syntax for control flow. Alternatively, for
+/// handling one effect at a time, [`handle`] can be used.
+pub fn handle_many<G, R, Es, Is, PreEs, PostEs, PreIs, PostIs, EffsIndices, InjsIndices, BeginIndex, EmbedIndices>(
+    mut g: G,
+    mut handler: impl FnMut(Es::Effects) -> ControlFlow<R, Is>,
+) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+where
+    Es: EffectGroup,
+    <Es as EffectGroup>::Effects: EffectList<Injections = Is>,
+    Is: CoproductEmbedder<PreIs, InjsIndices>,
+    PreEs: EffectList<Injections = PreIs> + CoproductSubsetter<<Es as EffectGroup>::Effects, EffsIndices, Remainder = PostEs>,
+    PostEs: EffectList<Injections = PostIs>,
+    PreIs: CoprodInjector<Begin, BeginIndex>,
+    PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
+    G: Generator<PreIs, Yield = PreEs, Return = R>,
+{
+    move |_begin: PostIs| {
+        let mut injection = PreIs::inject(Begin);
+        loop {
+            // safety: see handle()
+            let pinned = unsafe { Pin::new_unchecked(&mut g) };
+            match pinned.resume(injection) {
+                GeneratorState::Yielded(effs) => match effs.subset() {
+                    Ok(effs) => match handler(effs) {
+                        ControlFlow::Continue(injs) => injection = injs.embed(),
+                        ControlFlow::Break(ret) => return ret,
+                    },
+                    Err(effs) => injection = (yield effs).embed(),
                 },
                 GeneratorState::Complete(ret) => return ret,
             }

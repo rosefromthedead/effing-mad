@@ -2,21 +2,21 @@
 #![feature(let_else)]
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{quote, ToTokens};
 use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Error, Expr, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member, Pat, ReturnType,
-    Signature, Token, Type, TypeParam, Visibility,
+    Signature, Token, Type, TypeParam, Visibility, ExprBreak, ExprReturn, PatStruct, PatTupleStruct,
 };
 
 fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
         {
             use ::core::ops::{Generator, GeneratorState};
-            use ::effing_mad::frunk::coproduct::Coproduct;
+            use ::effing_mad::frunk::Coproduct;
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
@@ -62,7 +62,7 @@ impl syn::fold::Fold for Effectful {
                         let marker = ::effing_mad::macro_impl::mark(&into_effect);
                         let effect = ::effing_mad::IntoEffect::into_effect(into_effect);
                         let marker2 = ::effing_mad::macro_impl::mark(&effect);
-                        let injs = yield ::effing_mad::frunk::coproduct::Coproduct::inject(effect);
+                        let injs = yield ::effing_mad::frunk::Coproduct::inject(effect);
                         let injs = ::effing_mad::macro_impl::get_inj(injs, marker2).unwrap();
                         ::effing_mad::macro_impl::get_inj2(injs, marker).unwrap()
                     }
@@ -281,13 +281,13 @@ pub fn effects(input: TokenStream) -> TokenStream {
         }
 
         impl #generics ::effing_mad::EffectGroup for #group_name #generics {
-            type Coprod = ::effing_mad::frunk::Coprod!(#(#eff_names),*);
+            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_names #eff_generics),*);
         }
 
         #(
         #vis struct #eff_names #eff_generics (#(#arg_ty),*);
 
-        impl #eff_generics ::effing_mad::Effect for #eff_names {
+        impl #eff_generics ::effing_mad::Effect for #eff_names #eff_generics {
             type Injection = #ret_ty;
         }
         )*
@@ -296,53 +296,69 @@ pub fn effects(input: TokenStream) -> TokenStream {
 }
 
 struct HandlerArm {
-    eff: Ident,
-    args: Punctuated<Pat, Token![,]>,
-    breaker: Expr,
+    eff: Pat,
+    body: Expr,
 }
 
 impl Parse for HandlerArm {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let eff = input.parse()?;
-
-        let content;
-        parenthesized!(content in input);
-        let args = Punctuated::parse_terminated(&content)?;
-
         <Token![=>]>::parse(input)?;
-        let breaker = input.parse()?;
-
-        Ok(HandlerArm { eff, args, breaker })
+        let body = input.parse()?;
+        Ok(HandlerArm { eff, body })
     }
 }
 
-struct Handler {
+struct Handle {
+    g: Expr,
     asyncness: Option<Token![async]>,
     moveness: Option<Token![move]>,
-    mod_name: Ident,
-    eff_name: Ident,
-    generics: Generics,
+    group: Type,
     arms: Punctuated<HandlerArm, Token![,]>,
 }
 
-impl Parse for Handler {
+impl Parse for Handle {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let g = input.parse()?;
+        <Token![,]>::parse(input)?;
+
         let asyncness = input.parse()?;
         let moveness = input.parse()?;
-        let mod_name = input.parse()?;
-        <Token![::]>::parse(input)?;
-        let eff_name = input.parse()?;
-        let generics = input.parse()?;
+        let group = input.parse()?;
         <Token![,]>::parse(input)?;
         let arms = Punctuated::parse_terminated(input)?;
-        Ok(Handler {
+        Ok(Handle {
+            g,
             asyncness,
             moveness,
-            mod_name,
-            eff_name,
-            generics,
+            group,
             arms,
         })
+    }
+}
+
+// can't figure out what the type is lol
+struct FixControlFlow<T: ToTokens>(T);
+impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
+    fn fold_expr(&mut self, e: Expr) -> Expr {
+        let eff = &self.0;
+        match e {
+            Expr::Break(ExprBreak { expr, .. }) => {
+                let expr = expr.as_ref().map(ToTokens::to_token_stream).unwrap_or(quote!(()));
+                parse_quote!(return ::core::ops::ControlFlow::Break(#expr))
+            },
+            Expr::Return(ExprReturn { expr, .. }) => {
+                let expr = expr.as_ref().map(ToTokens::to_token_stream).unwrap_or(quote!(()));
+                parse_quote! {
+                    return ::core::ops::ControlFlow::Continue(
+                        ::effing_mad::frunk::Coproduct::inject(
+                            ::effing_mad::injection::Tagged::<_, #eff>::new(#expr)
+                        )
+                    )
+                }
+            },
+            e => e,
+        }
     }
 }
 
@@ -375,39 +391,60 @@ impl Parse for Handler {
 /// expands to a single closure with a `match` expression in it, so the arms can all borrow the
 /// same content, even mutably.
 #[proc_macro]
-pub fn handler(input: TokenStream) -> TokenStream {
-    let Handler {
+pub fn handle(input: TokenStream) -> TokenStream {
+    let Handle {
+        g,
         asyncness,
         moveness,
-        mod_name,
-        eff_name,
-        generics,
+        group,
         arms,
-    } = parse_macro_input!(input as Handler);
-    let injs_name = format_ident!("{eff_name}Injs");
-    let eff = arms
-        .iter()
-        .map(|HandlerArm { eff, .. }| format_ident!("__{eff}"));
-    let arg_name = arms
-        .iter()
-        .map(|HandlerArm { args, .. }| args.iter().collect::<Vec<_>>());
-    let breaker = arms.iter().map(|HandlerArm { breaker, .. }| breaker);
+    } = parse_macro_input!(input as Handle);
+
+    let mut matcher = quote! { match effs {} };
+    for arm in arms {
+        let HandlerArm { eff, mut body } = arm;
+        let eff_ty = match &eff {
+            // struct name on its own gets parsed as ident
+            Pat::Ident(path) => quote!(#path),
+            Pat::Path(path) => quote!(#path),
+            Pat::Struct(PatStruct { path, .. }) |
+            Pat::TupleStruct(PatTupleStruct { path, .. }) => quote!(#path),
+            p => panic!("invalid pattern in handler - must be path, struct or tuple struct\n{p:?}"),
+        };
+        if let Expr::Break(_) | Expr::Return(_) = body {
+            body = parse_quote!({ #body });
+        }
+        body = syn::fold::fold_expr(&mut FixControlFlow(&eff_ty), body.clone());
+        matcher = quote! {
+            match effs.uninject() {
+                Ok(#eff) => {
+                    let __effing_inj = #body;
+                    #[allow(unreachable_code)]
+                    ::effing_mad::frunk::Coproduct::inject(
+                        ::effing_mad::injection::Tagged::<_, #eff_ty>::new(__effing_inj)
+                    )
+                },
+                Err(effs) => #matcher,
+            }
+        };
+    }
+    let effs_ty = quote!(<#group as ::effing_mad::EffectGroup>::Effects);
+    let injs_ty = quote!(<#effs_ty as ::effing_mad::injection::EffectList>::Injections);
+    let ret_ty = quote!(::core::ops::ControlFlow<_, #injs_ty>);
     quote! {
         {
-            use #mod_name::*;
-            #moveness |eff: #eff_name #generics| #asyncness {
-                // Force moving `eff` into this possibly-async block
-                let eff = eff;
-                match eff {
-                    #(
-                    #eff_name::#eff(#(#arg_name),*) => match #breaker {
-                        ::core::ops::ControlFlow::Continue(inj) =>
-                            ::core::ops::ControlFlow::Continue(#injs_name::#eff(inj)),
-                        ::core::ops::ControlFlow::Break(ret) => ::core::ops::ControlFlow::Break(ret),
-                    }
-                    ),*
-                }
-            }
+            // if you inline this closure, horrible things happen. in examples/basic, the compiler
+            // starts to complain about sizedness - maybe a compiler bug, maybe I am finally being
+            // punished for my pride. if you think you understand rust, inline it and see for
+            // yourself. divine intervention not guaranteed to occur outside of nightly-2022-08-28
+            let __effing_closure = #moveness |effs: #effs_ty| -> #ret_ty #asyncness {
+                let __effing_inj = #matcher;
+                // if the handler unconditionally breaks then this line is unreachable, but we
+                // don't want to see a warning for it.
+                #[allow(unreachable_code)]
+                ::core::ops::ControlFlow::<_, _>::Continue(__effing_inj)
+            };
+            ::effing_mad::handle_many::<_, _, #group, _, _, _, _, _, _, _, _, _>(#g, __effing_closure)
         }
     }
     .into()
