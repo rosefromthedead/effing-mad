@@ -8,8 +8,9 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Error, Expr, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member, Pat, ReturnType,
-    Signature, Token, Type, TypeParam, Visibility, ExprBreak, ExprReturn, PatStruct, PatTupleStruct,
+    Error, Expr, ExprBreak, ExprReturn, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member,
+    Pat, PatStruct, PatTupleStruct, PathArguments, ReturnType, Signature, Token, Type, TypeParam,
+    TypePath, Visibility,
 };
 
 fn quote_do(e: &Expr) -> Expr {
@@ -158,7 +159,6 @@ impl Parse for EffectArg {
 }
 
 struct Effect {
-    generics: Generics,
     name: Ident,
     args: Vec<EffectArg>,
     ret: Type,
@@ -167,7 +167,6 @@ struct Effect {
 impl Parse for Effect {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         <Token![fn]>::parse(input)?;
-        let generics = input.parse()?;
         let name = input.parse()?;
 
         let content;
@@ -179,7 +178,6 @@ impl Parse for Effect {
         let ret = input.parse()?;
 
         Ok(Effect {
-            generics,
             name,
             args,
             ret,
@@ -242,22 +240,21 @@ pub fn effects(input: TokenStream) -> TokenStream {
         effects,
     } = parse_macro_input!(input as Effects);
 
-    let eff_generics = effects.iter().map(|eff| &eff.generics).collect::<Vec<_>>();
     let eff_names = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
-    let phantom_data_tys = generics
+    let phantom_datas = generics
         .params
         .iter()
         .map(|param| match param {
             GenericParam::Type(TypeParam { ident, .. }) => {
-                quote!(::core::marker::PhantomData<#ident>)
+                quote!(::core::marker::PhantomData::<#ident>)
             }
             GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
-                quote!(::core::marker::PhantomData<&#lifetime ()>)
+                quote!(::core::marker::PhantomData::<&#lifetime ()>)
             }
             syn::GenericParam::Const(_) => todo!(),
         })
         .collect::<Vec<_>>();
-    let phantom_data_tys = quote!(#(#phantom_data_tys),*);
+    let phantom_datas = quote!(#(#phantom_datas),*);
 
     let arg_name = effects
         .iter()
@@ -270,24 +267,25 @@ pub fn effects(input: TokenStream) -> TokenStream {
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
-        #vis struct #group_name #generics (#phantom_data_tys);
+        #vis struct #group_name #generics (#phantom_datas);
 
         impl #generics #group_name #generics {
             #(
-            fn #eff_names(#(#arg_name: #arg_ty),*) -> #eff_names<#eff_generics> {
-                #eff_names(#(#arg_name),*)
+            fn #eff_names(#(#arg_name: #arg_ty),*) -> #eff_names #generics {
+                #eff_names(#(#arg_name,)* #phantom_datas)
             }
             )*
         }
 
         impl #generics ::effing_mad::EffectGroup for #group_name #generics {
-            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_names #eff_generics),*);
+            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_names #generics),*);
         }
 
         #(
-        #vis struct #eff_names #eff_generics (#(#arg_ty),*);
+        #[allow(non_camel_case_types)]
+        #vis struct #eff_names #generics (#(#arg_ty,)* #phantom_datas);
 
-        impl #eff_generics ::effing_mad::Effect for #eff_names #eff_generics {
+        impl #generics ::effing_mad::Effect for #eff_names #generics {
             type Injection = #ret_ty;
         }
         )*
@@ -313,7 +311,7 @@ struct Handle {
     g: Expr,
     asyncness: Option<Token![async]>,
     moveness: Option<Token![move]>,
-    group: Type,
+    group: TypePath,
     arms: Punctuated<HandlerArm, Token![,]>,
 }
 
@@ -400,6 +398,8 @@ pub fn handle(input: TokenStream) -> TokenStream {
         arms,
     } = parse_macro_input!(input as Handle);
 
+    let PathArguments::AngleBracketed(ref generics) = group.path.segments.last().unwrap().arguments else { panic!("agh") };
+
     let mut matcher = quote! { match effs {} };
     for arm in arms {
         let HandlerArm { eff, mut body } = arm;
@@ -409,7 +409,7 @@ pub fn handle(input: TokenStream) -> TokenStream {
             Pat::Path(path) => quote!(#path),
             Pat::Struct(PatStruct { path, .. }) |
             Pat::TupleStruct(PatTupleStruct { path, .. }) => quote!(#path),
-            p => panic!("invalid pattern in handler - must be path, struct or tuple struct\n{p:?}"),
+            p => panic!("invalid pattern in handler: {p:?}"),
         };
         if let Expr::Break(_) | Expr::Return(_) = body {
             body = parse_quote!({ #body });
@@ -421,7 +421,7 @@ pub fn handle(input: TokenStream) -> TokenStream {
                     let __effing_inj = #body;
                     #[allow(unreachable_code)]
                     ::effing_mad::frunk::Coproduct::inject(
-                        ::effing_mad::injection::Tagged::<_, #eff_ty>::new(__effing_inj)
+                        ::effing_mad::injection::Tagged::<_, #eff_ty #generics>::new(__effing_inj)
                     )
                 },
                 Err(effs) => #matcher,

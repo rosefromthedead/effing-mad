@@ -8,8 +8,6 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use std::marker::PhantomData;
-
 use effing_mad::{effectful, handle, run};
 
 fn main() {
@@ -18,7 +16,7 @@ fn main() {
         use_state(),
         State<i32>,
         get(_) => state,
-        put(v) => state = v,
+        put(v, _) => state = v,
     );
     run(handled);
     println!("final value: {}", state);
@@ -26,15 +24,15 @@ fn main() {
 
 effing_mad::effects! {
     State<T> {
-        fn<T> get(_marker: PhantomData<T>) -> T;
-        fn<T> put(v: T) -> ();
+        fn get() -> T;
+        fn put(v: T) -> ();
     }
 }
 
 // Rust encourages immutability!
 #[effectful(State<i32>)]
 fn use_state() {
-    let initial = yield State::get(PhantomData);
+    let initial = yield State::get();
     println!("initial value: {}", initial);
     yield State::put(initial + 5);
 }
