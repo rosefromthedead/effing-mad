@@ -444,7 +444,7 @@ pub fn handle(input: TokenStream) -> TokenStream {
                 #[allow(unreachable_code)]
                 ::core::ops::ControlFlow::<_, _>::Continue(__effing_inj)
             };
-            ::effing_mad::handle_many::<_, _, #group, _, _, _, _, _, _, _, _, _>(#g, __effing_closure)
+            ::effing_mad::handle_many::<_, _, #effs_ty, _, _, _, _, _, _, _, _, _>(#g, __effing_closure)
         }
     }
     .into()

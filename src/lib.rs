@@ -164,13 +164,12 @@ where
 /// handling one effect at a time, [`handle`] can be used.
 pub fn handle_many<G, R, Es, Is, PreEs, PostEs, PreIs, PostIs, EffsIndices, InjsIndices, BeginIndex, EmbedIndices>(
     mut g: G,
-    mut handler: impl FnMut(Es::Effects) -> ControlFlow<R, Is>,
+    mut handler: impl FnMut(Es) -> ControlFlow<R, Is>,
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>
 where
-    Es: EffectGroup,
-    <Es as EffectGroup>::Effects: EffectList<Injections = Is>,
+    Es: EffectList<Injections = Is>,
     Is: CoproductEmbedder<PreIs, InjsIndices>,
-    PreEs: EffectList<Injections = PreIs> + CoproductSubsetter<<Es as EffectGroup>::Effects, EffsIndices, Remainder = PostEs>,
+    PreEs: EffectList<Injections = PreIs> + CoproductSubsetter<Es, EffsIndices, Remainder = PostEs>,
     PostEs: EffectList<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
