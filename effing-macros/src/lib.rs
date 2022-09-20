@@ -240,7 +240,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         effects,
     } = parse_macro_input!(input as Effects);
 
-    let eff_names = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
+    let eff_name = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
     let phantom_datas = generics
         .params
         .iter()
@@ -271,21 +271,21 @@ pub fn effects(input: TokenStream) -> TokenStream {
 
         impl #generics #group_name #generics {
             #(
-            fn #eff_names(#(#arg_name: #arg_ty),*) -> #eff_names #generics {
-                #eff_names(#(#arg_name,)* #phantom_datas)
+            fn #eff_name(#(#arg_name: #arg_ty),*) -> #eff_name #generics {
+                #eff_name(#(#arg_name,)* #phantom_datas)
             }
             )*
         }
 
         impl #generics ::effing_mad::EffectGroup for #group_name #generics {
-            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_names #generics),*);
+            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_name #generics),*);
         }
 
         #(
         #[allow(non_camel_case_types)]
-        #vis struct #eff_names #generics (#(#arg_ty,)* #phantom_datas);
+        #vis struct #eff_name #generics (#(#arg_ty,)* #phantom_datas);
 
-        impl #generics ::effing_mad::Effect for #eff_names #generics {
+        impl #generics ::effing_mad::Effect for #eff_name #generics {
             type Injection = #ret_ty;
         }
         )*
