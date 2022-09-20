@@ -19,7 +19,7 @@ use frunk::{
     Coprod, Coproduct,
 };
 
-pub use effing_macros::{effectful, effects, handle};
+pub use effing_macros::{effectful, effects, handler};
 use injection::{Begin, EffectList, Tagged};
 
 /// An uninhabited type that can never be constructed.

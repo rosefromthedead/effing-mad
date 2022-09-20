@@ -307,26 +307,23 @@ impl Parse for HandlerArm {
     }
 }
 
-struct Handle {
-    g: Expr,
+struct Handler {
     asyncness: Option<Token![async]>,
     moveness: Option<Token![move]>,
     group: TypePath,
     arms: Punctuated<HandlerArm, Token![,]>,
 }
 
-impl Parse for Handle {
+impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let g = input.parse()?;
-        <Token![,]>::parse(input)?;
-
         let asyncness = input.parse()?;
         let moveness = input.parse()?;
         let group = input.parse()?;
-        <Token![,]>::parse(input)?;
-        let arms = Punctuated::parse_terminated(input)?;
-        Ok(Handle {
-            g,
+
+        let content;
+        braced!(content in input);
+        let arms = Punctuated::parse_terminated(&content)?;
+        Ok(Handler {
             asyncness,
             moveness,
             group,
@@ -389,14 +386,13 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
 /// expands to a single closure with a `match` expression in it, so the arms can all borrow the
 /// same content, even mutably.
 #[proc_macro]
-pub fn handle(input: TokenStream) -> TokenStream {
-    let Handle {
-        g,
+pub fn handler(input: TokenStream) -> TokenStream {
+    let Handler {
         asyncness,
         moveness,
         group,
         arms,
-    } = parse_macro_input!(input as Handle);
+    } = parse_macro_input!(input as Handler);
 
     let PathArguments::AngleBracketed(ref generics) = group.path.segments.last().unwrap().arguments else { panic!("agh") };
 
@@ -432,19 +428,12 @@ pub fn handle(input: TokenStream) -> TokenStream {
     let injs_ty = quote!(<#effs_ty as ::effing_mad::injection::EffectList>::Injections);
     let ret_ty = quote!(::core::ops::ControlFlow<_, #injs_ty>);
     quote! {
-        {
-            // if you inline this closure, horrible things happen. in examples/basic, the compiler
-            // starts to complain about sizedness - maybe a compiler bug, maybe I am finally being
-            // punished for my pride. if you think you understand rust, inline it and see for
-            // yourself. divine intervention not guaranteed to occur outside of nightly-2022-08-28
-            let __effing_closure = #moveness |effs: #effs_ty| -> #ret_ty #asyncness {
-                let __effing_inj = #matcher;
-                // if the handler unconditionally breaks then this line is unreachable, but we
-                // don't want to see a warning for it.
-                #[allow(unreachable_code)]
-                ::core::ops::ControlFlow::<_, _>::Continue(__effing_inj)
-            };
-            ::effing_mad::handle_many::<_, _, #effs_ty, _, _, _, _, _, _, _, _, _>(#g, __effing_closure)
+        #moveness |effs: #effs_ty| -> #ret_ty #asyncness {
+            let __effing_inj = #matcher;
+            // if the handler unconditionally breaks then this line is unreachable, but we
+            // don't want to see a warning for it.
+            #[allow(unreachable_code)]
+            ::core::ops::ControlFlow::<_, _>::Continue(__effing_inj)
         }
     }
     .into()
