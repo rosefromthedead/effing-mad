@@ -499,18 +499,13 @@ pub fn handler(input: TokenStream) -> TokenStream {
             };
         }
     }
-    let effs_ty;
-    let injs_ty;
-    if is_shorthand {
-        effs_ty = quote!(#group);
-        injs_ty = quote!(<#group as ::effing_mad::Effect>::Injection);
+    let effs_ty = if is_shorthand {
+        quote!(#group)
     } else {
-        effs_ty = quote!(<#group as ::effing_mad::EffectGroup>::Effects);
-        injs_ty = quote!(<#effs_ty as ::effing_mad::injection::EffectList>::Injections);
-    }
-    let ret_ty = quote!(::core::ops::ControlFlow<_, #injs_ty>);
+        quote!(<#group as ::effing_mad::EffectGroup>::Effects)
+    };
     quote! {
-        #moveness |effs: #effs_ty| -> #ret_ty #asyncness {
+        #moveness |effs: #effs_ty| #asyncness {
             let __effing_inj = #matcher;
             // if the handler unconditionally breaks then this line is unreachable, but we
             // don't want to see a warning for it.
