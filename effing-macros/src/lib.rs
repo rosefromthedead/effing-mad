@@ -9,8 +9,8 @@ use syn::{
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Error, Expr, ExprBreak, ExprReturn, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member,
-    Pat, PatTupleStruct, PathArguments, ReturnType, Signature, Token, Type, TypeParam,
-    TypePath, Visibility,
+    Pat, PatIdent, PatPath, PatTupleStruct, Path, PathArguments, PathSegment, ReturnType,
+    Signature, Token, Type, TypeParam, TypePath, Visibility,
 };
 
 fn quote_do(e: &Expr) -> Expr {
@@ -310,12 +310,40 @@ struct Handler {
     moveness: Option<Token![move]>,
     group: TypePath,
     arms: Punctuated<HandlerArm, Token![,]>,
+    is_shorthand: bool,
 }
 
 impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let asyncness = input.parse()?;
         let moveness = input.parse()?;
+        let ahead = input.fork();
+        if ahead.parse::<HandlerArm>().is_ok() {
+            // the docs say not to do this but idk how to do it otherwise
+            let single_arm: HandlerArm = input.parse().unwrap();
+            let path = match &single_arm.pat {
+                // struct name on its own gets parsed as ident
+                Pat::Ident(PatIdent { ident, .. }) => Path {
+                    leading_colon: None,
+                    segments: Punctuated::from_iter(std::iter::once(PathSegment {
+                        ident: ident.clone(),
+                        arguments: PathArguments::None,
+                    })),
+                },
+                Pat::Path(PatPath { path, .. }) => path.clone(),
+                Pat::TupleStruct(PatTupleStruct { path, .. }) => path.clone(),
+                p => panic!("invalid pattern in handler: {p:?}"),
+            };
+            let group = TypePath { qself: None, path };
+
+            return Ok(Handler {
+                asyncness,
+                moveness,
+                group,
+                arms: Punctuated::from_iter(std::iter::once(single_arm)),
+                is_shorthand: true,
+            });
+        }
         let group = input.parse()?;
 
         let content;
@@ -326,15 +354,20 @@ impl Parse for Handler {
             moveness,
             group,
             arms,
+            is_shorthand: false,
         })
     }
 }
 
 // can't figure out what the type is lol
-struct FixControlFlow<T: ToTokens>(T);
+struct FixControlFlow<T: ToTokens> {
+    eff_ty: T,
+    is_shorthand: bool,
+}
+
 impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
     fn fold_expr(&mut self, e: Expr) -> Expr {
-        let eff = &self.0;
+        let eff = &self.eff_ty;
         match e {
             Expr::Break(ExprBreak { expr, .. }) => {
                 let expr = expr
@@ -348,11 +381,14 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                     .as_ref()
                     .map(ToTokens::to_token_stream)
                     .unwrap_or(quote!(()));
+                let inj = if self.is_shorthand {
+                    quote!(#expr)
+                } else {
+                    quote!(::effing_mad::injection::Tagged::<_, #eff>::new(#expr))
+                };
                 parse_quote! {
                     return ::core::ops::ControlFlow::Continue(
-                        ::effing_mad::frunk::Coproduct::inject(
-                            ::effing_mad::injection::Tagged::<_, #eff>::new(#expr)
-                        )
+                        ::effing_mad::frunk::Coproduct::inject(#inj)
                     )
                 }
             }
@@ -396,6 +432,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
         moveness,
         group,
         arms,
+        is_shorthand,
     } = parse_macro_input!(input as Handler);
 
     let generics = match group.path.segments.last().unwrap().arguments {
@@ -422,7 +459,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
                     let mut p = p.clone();
                     p.pat.elems.push(parse_quote!(::core::marker::PhantomData));
                     quote!(#p)
-                },
+                }
                 p => panic!("invalid pattern in handler: {p:?}"),
             }
         } else {
@@ -431,22 +468,46 @@ pub fn handler(input: TokenStream) -> TokenStream {
         if let Expr::Break(_) | Expr::Return(_) = body {
             body = parse_quote!({ #body });
         }
-        body = syn::fold::fold_expr(&mut FixControlFlow(&eff_ty), body.clone());
-        matcher = quote! {
-            match effs.uninject() {
-                Ok(#new_pat) => {
-                    let __effing_inj = #body;
-                    #[allow(unreachable_code)]
-                    ::effing_mad::frunk::Coproduct::inject(
-                        ::effing_mad::injection::Tagged::<_, #eff_ty #generics>::new(__effing_inj)
-                    )
-                },
-                Err(effs) => #matcher,
-            }
-        };
+        body = syn::fold::fold_expr(
+            &mut FixControlFlow {
+                eff_ty: &eff_ty,
+                is_shorthand,
+            },
+            body.clone(),
+        );
+        if is_shorthand {
+            matcher = quote! {
+                {
+                    let #new_pat = effs;
+                    #body
+                }
+            };
+        } else {
+            matcher = quote! {
+                match effs.uninject() {
+                    Ok(#new_pat) => {
+                        let __effing_inj = #body;
+                        #[allow(unreachable_code)]
+                        ::effing_mad::frunk::Coproduct::inject(
+                            ::effing_mad::injection::Tagged::<_, #eff_ty #generics>::new(
+                                __effing_inj
+                            )
+                        )
+                    },
+                    Err(effs) => #matcher,
+                }
+            };
+        }
     }
-    let effs_ty = quote!(<#group as ::effing_mad::EffectGroup>::Effects);
-    let injs_ty = quote!(<#effs_ty as ::effing_mad::injection::EffectList>::Injections);
+    let effs_ty;
+    let injs_ty;
+    if is_shorthand {
+        effs_ty = quote!(#group);
+        injs_ty = quote!(<#group as ::effing_mad::Effect>::Injection);
+    } else {
+        effs_ty = quote!(<#group as ::effing_mad::EffectGroup>::Effects);
+        injs_ty = quote!(<#effs_ty as ::effing_mad::injection::EffectList>::Injections);
+    }
     let ret_ty = quote!(::core::ops::ControlFlow<_, #injs_ty>);
     quote! {
         #moveness |effs: #effs_ty| -> #ret_ty #asyncness {

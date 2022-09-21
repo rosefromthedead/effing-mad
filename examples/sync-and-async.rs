@@ -3,7 +3,7 @@
 
 use std::ops::ControlFlow;
 
-use effing_mad::{effectful, handle, handler, run, handle_async};
+use effing_mad::{effectful, handle, handle_async, handler, run};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_current_thread()

@@ -162,7 +162,20 @@ where
 /// Type inference with this function is unlikely to succeed, so it is recommended to use the
 /// [`handle!`] macro, which also provides friendlier syntax for control flow. Alternatively, for
 /// handling one effect at a time, [`handle`] can be used.
-pub fn handle_many<G, R, Es, Is, PreEs, PostEs, PreIs, PostIs, EffsIndices, InjsIndices, BeginIndex, EmbedIndices>(
+pub fn handle_many<
+    G,
+    R,
+    Es,
+    Is,
+    PreEs,
+    PostEs,
+    PreIs,
+    PostIs,
+    EffsIndices,
+    InjsIndices,
+    BeginIndex,
+    EmbedIndices,
+>(
     mut g: G,
     mut handler: impl FnMut(Es) -> ControlFlow<R, Is>,
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>

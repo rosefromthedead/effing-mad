@@ -12,12 +12,18 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use effing_mad::{effectful, handle, Effect};
+use effing_mad::{effectful, handle, handler, Effect};
 
 fn main() {
-    let cancelled = handle!(combined(), Cancel, Cancel => break);
-    let logged = handle!(cancelled, Log<'_>, Log(msg) => println!("log: {msg}"));
-    let filesystemed = handle!(logged, FileRead, FileRead(_name) => "monadtransformerssuck".into());
+    let cancelled = handle(combined(), handler!(Cancel => break));
+    let logged = handle(cancelled, handler!(Log(msg) => println!("log: {msg}")));
+    let filesystemed = handle(
+        logged,
+        handler!(FileRead(name) => {
+            assert_eq!(name, "~/my passwords.txt");
+            "monadtransformerssuck".into()
+        }),
+    );
 
     effing_mad::run(filesystemed);
 }
