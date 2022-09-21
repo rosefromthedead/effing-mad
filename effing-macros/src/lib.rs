@@ -9,7 +9,7 @@ use syn::{
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Error, Expr, ExprBreak, ExprReturn, GenericParam, Generics, Ident, ItemFn, LifetimeDef, Member,
-    Pat, PatStruct, PatTupleStruct, PathArguments, ReturnType, Signature, Token, Type, TypeParam,
+    Pat, PatTupleStruct, PathArguments, ReturnType, Signature, Token, Type, TypeParam,
     TypePath, Visibility,
 };
 
@@ -401,9 +401,8 @@ pub fn handler(input: TokenStream) -> TokenStream {
         let HandlerArm { eff, mut body } = arm;
         let eff_ty = match &eff {
             // struct name on its own gets parsed as ident
-            Pat::Ident(path) => quote!(#path),
+            Pat::Ident(ident) => quote!(#ident),
             Pat::Path(path) => quote!(#path),
-            Pat::Struct(PatStruct { path, .. }) |
             Pat::TupleStruct(PatTupleStruct { path, .. }) => quote!(#path),
             p => panic!("invalid pattern in handler: {p:?}"),
         };
