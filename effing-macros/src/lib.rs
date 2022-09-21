@@ -160,7 +160,7 @@ impl Parse for EffectArg {
 
 struct Effect {
     name: Ident,
-    args: Vec<EffectArg>,
+    args: Punctuated<EffectArg, Token![,]>,
     ret: Type,
 }
 
@@ -171,17 +171,12 @@ impl Parse for Effect {
 
         let content;
         parenthesized!(content in input);
-        let args = Punctuated::<EffectArg, Token![,]>::parse_terminated(&content)?;
-        let args = args.into_iter().collect();
+        let args = Punctuated::parse_terminated(&content)?;
 
         <Token![->]>::parse(input)?;
         let ret = input.parse()?;
 
-        Ok(Effect {
-            name,
-            args,
-            ret,
-        })
+        Ok(Effect { name, args, ret })
     }
 }
 
@@ -251,7 +246,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
             GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
                 quote!(::core::marker::PhantomData::<&#lifetime ()>)
             }
-            syn::GenericParam::Const(_) => todo!(),
+            GenericParam::Const(_) => todo!(),
         })
         .collect::<Vec<_>>();
     let phantom_datas = quote!(#(#phantom_datas),*);
@@ -294,16 +289,16 @@ pub fn effects(input: TokenStream) -> TokenStream {
 }
 
 struct HandlerArm {
-    eff: Pat,
+    pat: Pat,
     body: Expr,
 }
 
 impl Parse for HandlerArm {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let eff = input.parse()?;
+        let pat = input.parse()?;
         <Token![=>]>::parse(input)?;
         let body = input.parse()?;
-        Ok(HandlerArm { eff, body })
+        Ok(HandlerArm { pat, body })
     }
 }
 
@@ -339,11 +334,17 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
         let eff = &self.0;
         match e {
             Expr::Break(ExprBreak { expr, .. }) => {
-                let expr = expr.as_ref().map(ToTokens::to_token_stream).unwrap_or(quote!(()));
+                let expr = expr
+                    .as_ref()
+                    .map(ToTokens::to_token_stream)
+                    .unwrap_or(quote!(()));
                 parse_quote!(return ::core::ops::ControlFlow::Break(#expr))
-            },
+            }
             Expr::Return(ExprReturn { expr, .. }) => {
-                let expr = expr.as_ref().map(ToTokens::to_token_stream).unwrap_or(quote!(()));
+                let expr = expr
+                    .as_ref()
+                    .map(ToTokens::to_token_stream)
+                    .unwrap_or(quote!(()));
                 parse_quote! {
                     return ::core::ops::ControlFlow::Continue(
                         ::effing_mad::frunk::Coproduct::inject(
@@ -351,7 +352,7 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                         )
                     )
                 }
-            },
+            }
             e => e,
         }
     }
@@ -394,12 +395,16 @@ pub fn handler(input: TokenStream) -> TokenStream {
         arms,
     } = parse_macro_input!(input as Handler);
 
-    let PathArguments::AngleBracketed(ref generics) = group.path.segments.last().unwrap().arguments else { panic!("agh") };
+    let generics = match group.path.segments.last().unwrap().arguments {
+        PathArguments::None => None,
+        PathArguments::AngleBracketed(ref v) => Some(v),
+        PathArguments::Parenthesized(_) => panic!("stop that"),
+    };
 
     let mut matcher = quote! { match effs {} };
     for arm in arms {
-        let HandlerArm { eff, mut body } = arm;
-        let eff_ty = match &eff {
+        let HandlerArm { pat, mut body } = arm;
+        let eff_ty = match &pat {
             // struct name on its own gets parsed as ident
             Pat::Ident(ident) => quote!(#ident),
             Pat::Path(path) => quote!(#path),
