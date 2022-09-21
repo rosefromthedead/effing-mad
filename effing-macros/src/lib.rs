@@ -250,6 +250,9 @@ pub fn effects(input: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
     let phantom_datas = quote!(#(#phantom_datas),*);
+    let maybe_phantom_data = generics
+        .lt_token
+        .map(|_| quote!(::core::marker::PhantomData::<#group_name #generics>));
 
     let arg_name = effects
         .iter()
@@ -267,7 +270,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         impl #generics #group_name #generics {
             #(
             fn #eff_name(#(#arg_name: #arg_ty),*) -> #eff_name #generics {
-                #eff_name(#(#arg_name,)* #phantom_datas)
+                #eff_name(#(#arg_name,)* #maybe_phantom_data)
             }
             )*
         }
@@ -278,7 +281,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
 
         #(
         #[allow(non_camel_case_types)]
-        #vis struct #eff_name #generics (#(#arg_ty,)* #phantom_datas);
+        #vis struct #eff_name #generics (#(#arg_ty,)* #maybe_phantom_data);
 
         impl #generics ::effing_mad::Effect for #eff_name #generics {
             type Injection = #ret_ty;
@@ -411,13 +414,27 @@ pub fn handler(input: TokenStream) -> TokenStream {
             Pat::TupleStruct(PatTupleStruct { path, .. }) => quote!(#path),
             p => panic!("invalid pattern in handler: {p:?}"),
         };
+        let new_pat = if generics.is_some() {
+            match &pat {
+                Pat::Ident(ident) => quote!(#ident(::core::marker::PhantomData)),
+                Pat::Path(path) => quote!(#path(::core::marker::PhantomData)),
+                Pat::TupleStruct(p) => {
+                    let mut p = p.clone();
+                    p.pat.elems.push(parse_quote!(::core::marker::PhantomData));
+                    quote!(#p)
+                },
+                p => panic!("invalid pattern in handler: {p:?}"),
+            }
+        } else {
+            quote!(#pat)
+        };
         if let Expr::Break(_) | Expr::Return(_) = body {
             body = parse_quote!({ #body });
         }
         body = syn::fold::fold_expr(&mut FixControlFlow(&eff_ty), body.clone());
         matcher = quote! {
             match effs.uninject() {
-                Ok(#eff) => {
+                Ok(#new_pat) => {
                     let __effing_inj = #body;
                     #[allow(unreachable_code)]
                     ::effing_mad::frunk::Coproduct::inject(
