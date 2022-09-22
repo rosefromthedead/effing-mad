@@ -21,7 +21,7 @@ fn quote_do(e: &Expr) -> Expr {
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
-                // safety: same as in `handle`
+                // safety: same as in `handle_group`
                 let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
                 match pinned.resume(injection) {
                     GeneratorState::Yielded(effs) =>

@@ -95,7 +95,7 @@ pub fn map<E, I, T, U>(
 ) -> impl Generator<I, Yield = E, Return = U> {
     move |mut injs: I| {
         loop {
-            // safety: see handle()
+            // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injs) {
                 GeneratorState::Yielded(effs) => injs = yield effs,
@@ -105,7 +105,7 @@ pub fn map<E, I, T, U>(
     }
 }
 
-/// Apply a pure effect handler to an effectful computation.
+/// Apply a pure handler to an effectful computation, handling one effect.
 ///
 /// When given an effectful computation with effects (A, B, C) and a handler for effect C, this
 /// returns a new effectful computation with effects (A, B). Handlers can choose for each instance
@@ -114,43 +114,43 @@ pub fn map<E, I, T, U>(
 /// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
 /// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
 ///
-/// For handling multiple effects using one closure, see [`handle!`].
-pub fn handle<G, R, E, PreEs, PostEs, EffIndex, PreIs, PostIs, BeginIndex, InjIndex, EmbedIndices>(
-    mut g: G,
+/// For handling multiple effects with one closure, see [`handle_group`].
+pub fn handle<
+    G,
+    R,
+    E,
+    PreEs,
+    PostEs,
+    EffIndex,
+    PreIs,
+    PostIs,
+    BeginIndex,
+    InjIndex,
+    InjsIndices,
+    EmbedIndices,
+>(
+    g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
 ) -> impl Generator<PostIs, Yield = PostEs, Return = R>
 where
     E: Effect,
+    Coprod!(Tagged<E::Injection, E>, Begin): CoproductEmbedder<PreIs, InjsIndices>,
     PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
     PostEs: EffectList<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
     G: Generator<PreIs, Yield = PreEs, Return = R>,
 {
-    move |_begin: PostIs| {
-        let mut injection = PreIs::inject(Begin);
-        loop {
-            // safety: im 90% sure that since we are inside Generator::resume, which takes
-            // Pin<&mut self>, all locals in this function are effectively pinned and this call is
-            // simply projecting that
-            let pinned = unsafe { Pin::new_unchecked(&mut g) };
-            match pinned.resume(injection) {
-                GeneratorState::Yielded(effs) => match effs.uninject() {
-                    // the effect we are handling
-                    Ok(eff) => match handler(eff) {
-                        ControlFlow::Continue(inj) => injection = PreIs::inject(Tagged::new(inj)),
-                        ControlFlow::Break(ret) => return ret,
-                    },
-                    // any other effect
-                    Err(effs) => injection = (yield effs).embed(),
-                },
-                GeneratorState::Complete(ret) => return ret,
-            }
-        }
-    }
+    handle_group(g, move |effs| match effs {
+        Coproduct::Inl(eff) => match handler(eff) {
+            ControlFlow::Continue(inj) => ControlFlow::Continue(Coproduct::Inl(Tagged::new(inj))),
+            ControlFlow::Break(ret) => ControlFlow::Break(ret),
+        },
+        Coproduct::Inr(never) => match never {},
+    })
 }
 
-/// Apply a handler which handles multiple effects.
+/// Apply a pure handler to an effectful computation, handling any number of effects.
 ///
 /// When given an effectful computation with effects (A, B, C, D) and a handler for effects (A, B),
 /// this function returns a new effectful computation with effects (C, D). Handlers can choose for
@@ -159,10 +159,12 @@ where
 /// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
 /// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
 ///
-/// Type inference with this function is unlikely to succeed, so it is recommended to use the
-/// [`handle!`] macro, which also provides friendlier syntax for control flow. Alternatively, for
-/// handling one effect at a time, [`handle`] can be used.
-pub fn handle_many<
+/// `Es` must be a [`Coproduct`](frunk::Coproduct) of effects.
+///
+/// Care should be taken to only produce an injection type when handling the corresponding effect.
+/// If the injection type does not match the effect that is being handled, the computation will
+/// most likely panic.
+pub fn handle_group<
     G,
     R,
     Es,
@@ -191,7 +193,9 @@ where
     move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         loop {
-            // safety: see handle()
+            // safety: im 90% sure that since we are inside Generator::resume which takes
+            // Pin<&mut self>, all locals in this function are effectively pinned and this call is
+            // simply projecting that
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
                 GeneratorState::Yielded(effs) => match effs.subset() {
@@ -209,31 +213,65 @@ where
 
 /// Handle the last effect in a computation using an async handler.
 ///
-/// This allows you to turn effectful computations into async fns. Only the last remaining effect
-/// can be handled asynchronously because it is not possible to construct a computation that is
-/// both effectful and asynchronous.
-pub async fn handle_async<Eff, G, R, H, Fut>(mut g: G, mut handler: H) -> G::Return
+/// For handling multiple effects asynchronously, see [`handle_group_async`]. For details on
+/// handling effects, see [`handle`].
+///
+/// When an async handler is used, it must handle all of the remaining effects in a computation,
+/// because it is impossible to construct a computation that is both asynchronous and effectful.
+pub async fn handle_async<Eff, G, Fut>(mut g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
 where
     Eff: Effect,
-    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff), Return = R>,
-    H: FnMut(Eff) -> Fut,
-    Fut: Future<Output = ControlFlow<R, Eff::Injection>>,
+    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff)>,
+    Fut: Future<Output = ControlFlow<G::Return, Eff::Injection>>,
 {
-    let mut inj = Coproduct::inject(Begin);
+    let mut injs = Coproduct::inject(Begin);
     loop {
-        // safety: see handle() - remember that futures are pinned in the same way as generators
+        // safety: see handle_group() - remember that futures are pinned in the same way as
+        // generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
-        match pinned.resume(inj) {
-            GeneratorState::Yielded(eff) => {
-                let eff: Eff = match eff.uninject() {
-                    Ok(eff) => eff,
-                    Err(never) => match never {},
+        match pinned.resume(injs) {
+            GeneratorState::Yielded(effs) => {
+                let eff = match effs {
+                    Coproduct::Inl(v) => v,
+                    Coproduct::Inr(never) => match never {},
                 };
                 match handler(eff).await {
-                    ControlFlow::Continue(new_inj) => inj = Coproduct::inject(Tagged::new(new_inj)),
+                    ControlFlow::Continue(new_injs) => injs = Coproduct::Inl(Tagged::new(new_injs)),
                     ControlFlow::Break(ret) => return ret,
                 }
             }
+            GeneratorState::Complete(ret) => return ret,
+        }
+    }
+}
+
+/// Handle all of the remaining effects in a computation using an async handler.
+///
+/// For handling one effect asynchronously, see [`handle_group_async`]. For details on handling
+/// effects in groups, see [`handle_group`].
+///
+/// When an async handler is used, it must handle all of the remaining effects in a computation,
+/// because it is impossible to construct a computation that is both asynchronous and effectful.
+pub async fn handle_group_async<G, Fut, Es, Is, BeginIndex>(
+    mut g: G,
+    mut handler: impl FnMut(Es) -> Fut,
+) -> G::Return
+where
+    Es: EffectList<Injections = Is>,
+    Is: CoprodInjector<Begin, BeginIndex>,
+    G: Generator<Is, Yield = Es>,
+    Fut: Future<Output = ControlFlow<G::Return, Is>>,
+{
+    let mut injs = Is::inject(Begin);
+    loop {
+        // safety: see handle_group() - remember that futures are pinned in the same way as
+        // generators
+        let pinned = unsafe { Pin::new_unchecked(&mut g) };
+        match pinned.resume(injs) {
+            GeneratorState::Yielded(effs) => match handler(effs).await {
+                ControlFlow::Continue(new_injs) => injs = new_injs,
+                ControlFlow::Break(ret) => return ret,
+            },
             GeneratorState::Complete(ret) => return ret,
         }
     }
@@ -293,7 +331,7 @@ where
     move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         loop {
-            // safety: see handle()
+            // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
                 GeneratorState::Yielded(effs) => match effs.uninject() {

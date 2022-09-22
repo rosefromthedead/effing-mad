@@ -8,7 +8,7 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use effing_mad::{effectful, handle_many, handler, run};
+use effing_mad::{effectful, handle_group, handler, run};
 
 fn main() {
     let mut state = 34;
@@ -16,7 +16,7 @@ fn main() {
         get() => state,
         put(v) => state = v,
     });
-    let handled = handle_many(use_state(), state_handler);
+    let handled = handle_group(use_state(), state_handler);
     run(handled);
     println!("final value: {}", state);
 }
