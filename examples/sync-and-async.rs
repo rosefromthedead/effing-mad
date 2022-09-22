@@ -1,9 +1,7 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use std::ops::ControlFlow;
-
-use effing_mad::{effectful, handle, handle_async, handler, run};
+use effing_mad::{effectful, handle_group, handle_group_async, handler, run};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -36,8 +34,8 @@ async fn interesting_and_useful() {
         }
     };
 
-    let req1 = handle_async(example(), handler);
-    let req2 = handle_async(example(), handler);
+    let req1 = handle_group_async(example(), handler);
+    let req2 = handle_group_async(example(), handler);
 
     // asyncified effectful functions can be composed in the same ways as traditional futures
     let (res1, res2) = futures::future::join(req1, req2).await;
@@ -51,7 +49,7 @@ fn boring_and_old_fashioned() {
         }
     };
 
-    let req = handle_many(example(), handler);
+    let req = handle_group(example(), handler);
     let res = run(req);
     println!("synchronously found {res} bytes");
 }
