@@ -8,34 +8,26 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 
-use core::ops::ControlFlow;
-use effing_mad::{effectful, handle, handler, run};
+use effing_mad::{effectful, handle_group, handler, run};
 
 fn main() {
     let mut state = 34;
-    let handled = handle(
-        use_state(),
-        handler! {
-            state::State<i32>,
-            get() => ControlFlow::Continue(state),
-            put(v) => {
-                state = v;
-                ControlFlow::Continue(())
-            },
-        },
-    );
+    let state_handler = handler!(State<i32> {
+        get() => state,
+        put(v) => state = v,
+    });
+    let handled = handle_group(use_state(), state_handler);
     run(handled);
     println!("final value: {}", state);
 }
 
 effing_mad::effects! {
-    state::State<T> {
+    State<T> {
         fn get() -> T;
         fn put(v: T) -> ();
     }
 }
 
-use state::State;
 // Rust encourages immutability!
 #[effectful(State<i32>)]
 fn use_state() {
