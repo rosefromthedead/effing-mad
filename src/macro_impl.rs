@@ -9,7 +9,7 @@ use frunk::{
 
 use crate::{
     injection::{EffectList, Tagged},
-    Effect, EffectGroup, IntoEffect,
+    Effect, EffectGroup,
 };
 
 #[must_use]
@@ -23,14 +23,6 @@ where
     Injs: CoprodUninjector<Tagged<E::Injection, E>, Index>,
 {
     injs.uninject().ok().map(Tagged::untag)
-}
-
-pub fn get_inj2<E, I, Injs>(injs: Injs, _marker: PhantomData<I>) -> Option<I::Injection>
-where
-    I: IntoEffect<Effect = E>,
-    E: Effect<Injection = Injs>,
-{
-    I::uninject(injs)
 }
 
 pub trait FlattenEffects {

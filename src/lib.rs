@@ -57,36 +57,6 @@ impl<E: Effect> EffectGroup for E {
     type Effects = Coproduct<E, CNil>;
 }
 
-/// Types that can be used with the `yield` syntax sugar inside an `#[effectful(...)]` function.
-pub trait IntoEffect {
-    type Effect: Effect;
-    /// The injection that comes from running the effect represented by this type. Sometimes it is
-    /// more specific than/a certain variant of `<Self::Effect>::Injection`. Conversion between the
-    /// two is provided by `inject` and `uninject`.
-    type Injection;
-
-    fn into_effect(self) -> Self::Effect;
-    fn inject(inj: Self::Injection) -> <Self::Effect as Effect>::Injection;
-    /// This should only be None if the injection does not match this sub-effect at all. This can
-    /// happen when a hand-written effect handler is used.
-    fn uninject(injs: <Self::Effect as Effect>::Injection) -> Option<Self::Injection>;
-}
-
-impl<E: Effect> IntoEffect for E {
-    type Effect = Self;
-    type Injection = <Self as Effect>::Injection;
-
-    fn into_effect(self) -> Self {
-        self
-    }
-    fn inject(inj: Self::Injection) -> Self::Injection {
-        inj
-    }
-    fn uninject(injs: Self::Injection) -> Option<Self::Injection> {
-        Some(injs)
-    }
-}
-
 /// Create a new effectful computation by applying a pure function to the return value of an
 /// existing computation.
 pub fn map<E, I, T, U>(

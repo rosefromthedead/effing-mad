@@ -59,13 +59,10 @@ impl syn::fold::Fold for Effectful {
                 let Some(ref expr) = y.expr else { panic!("no expr?") };
                 parse_quote! {
                     {
-                        let into_effect = { #expr };
-                        let marker = ::effing_mad::macro_impl::mark(&into_effect);
-                        let effect = ::effing_mad::IntoEffect::into_effect(into_effect);
-                        let marker2 = ::effing_mad::macro_impl::mark(&effect);
+                        let effect = { #expr };
+                        let marker = ::effing_mad::macro_impl::mark(&effect);
                         let injs = yield ::effing_mad::frunk::Coproduct::inject(effect);
-                        let injs = ::effing_mad::macro_impl::get_inj(injs, marker2).unwrap();
-                        ::effing_mad::macro_impl::get_inj2(injs, marker).unwrap()
+                        ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
                     }
                 }
             }
@@ -89,17 +86,17 @@ impl syn::fold::Fold for Effectful {
 ///     epic_function(val).do_
 /// }
 /// ```
-/// This macro takes a list of types as its arguments. These types must implement
-/// (`Effect`)[effing_mad::Effect]. Then, `expr_a` and `expr_b` must each be some type that
-/// implements either `IntoEffect<Effect = A>` or `IntoEffect<Effect = B>`.
+/// This macro takes a list of types as its arguments. These types must implement `Effect` or
+/// `EffectGroup`. Expressions passed to `yield` must be of one of those effect types, or of an
+/// effect type that is in one of those groups.
 ///
-/// The `yield expr` syntax runs the effect `expr`, and evaluates to the Injection of that
-/// [`IntoEffect`] type.
+/// The `yield expr` syntax runs the effect `expr`, and evaluates to the Injection of that effect
+/// type.
 ///
 /// The `do_` operator is analogous to `.await`. It runs an effectful computation by yielding all
-/// of its effects to the caller. The callee's effects must be a subset of the caller's effects -
-/// in this example, a subset of `{A, B}`. `epic_function` is usually another function defined
-/// using this macro.
+/// of its effects to the caller of the current function. The callee's effects must be a subset of
+/// the current function's effects - in this example, a subset of `{A, B}`. The callee is usually
+/// another function defined using this macro.
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
@@ -206,26 +203,25 @@ impl Parse for Effects {
     }
 }
 
-/// Define a new effect type, by multiplexing sub-effects into one type.
+/// Define a new group of effects.
 ///
 /// # Usage
 /// ```rust
 /// effects! {
-///     state::State<T> {
+///     State<T> {
 ///         fn get() -> T;
 ///         fn put(v: T) -> ();
 ///     }
 /// }
 /// ```
-/// It is necessary to provide a unique module name (prefer the snake_case_version of the type name)
-/// because of Horrible Macro Reasons. This example produces a new module called `state` with the
-/// `State` effect type inside it.
 ///
-/// This allows usage such as `let state = yield State::get()` and `yield State::put(val)` - the
-/// type after `->` is the injection that that sub-effect has. This is why the `IntoEffect` trait
-/// exists; the injection of `get()` is a single enum variant of the injection of `State<T>`. The
-/// former is what a user is interested in, but due to multiplexing, the latter is what gets passed
-/// into a computation when it is resumed.
+/// Multiple new types are created: one for the group (`State` in this example) and one for each
+/// effect in the group. The group type has associated functions that look like the functions in the
+/// invocation.
+///
+/// This allows usage such as `let state = yield State::get()` and `yield State::put(val)`. The
+/// type after `->` defines the injection type of that effect, which is the type that such yield
+/// expressions will evaluate to.
 #[proc_macro]
 pub fn effects(input: TokenStream) -> TokenStream {
     let Effects {
@@ -397,32 +393,42 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
     }
 }
 
-/// Define a handler for an effect type whose definition uses [`effects!`]
+/// Define a handler for an effect or group of effects.
 ///
 /// # Usage
+/// Handling a group of effects at once:
 /// ```rust
 /// let mut state = 0i32;
-/// handler! {
-///     state::State<i32>,
-///     get() => ControlFlow::Continue(state),
-///     put(v) => {
-///         state = v;
-///         ControlFlow::Continue(())
-///     },
-/// }
+/// handle_group(
+///     g,
+///     handler! {
+///         State<i32> {
+///             get() => state,
+///             put(v) => state = v,
+///         }
+///     }
+/// )
 /// ```
+///
+/// Handling a single effect at once:
+/// ```
+/// handle(g, handler!(Cancel => break))
+/// ```
+///
+/// The value that a handler arm's expression evaluates to (for example `state` and `()` in the
+/// `State<i32>` example) is used as the injection for that effect. It is also possible to use the
+/// `break` keyword to cause the computation that is being handled to return. In this case, the
+/// type of the value passed to `break` must match the return type of a computation that the
+/// handler is used on. See [`map`] for a way to change the return value of a computation.
+///
 /// The handler can capture state from its environment, and/or be asynchronous. The keywords
 /// `async` and `move` can both optionally appear (in that order) at the very beginning of the
 /// macro input to control these behaviours, in a similar way to how they would affect a closure.
+/// These keywords apply to all arms of the handler. `handle_async` or `handle_group_async` must be
+/// used when applying an async handler.
 ///
-/// It is necessary to provide both the module (`snake_case`) and type (`PascalCase`) names, due to
-/// the same Horrible Macro Reasons as mentioned in the documentation of `effects!`. The sub-effects
-/// (here `get` and `put`) here are demultiplexed into their respective handler arms upon
-/// invocation of the handler. All sub-effects in an effect type must be handled in a given
-/// invocation of this macro.
-///
-/// Notice how the `put` arm in this example mutably borrows the `state` variable, while the `get`
-/// arm also borrows it. This is the advantage of multiplexing effects. Internally, `handler!`
+/// Note that the `put` arm in this example mutably borrows the `state` variable, while the `get`
+/// arm also borrows it. This is the advantage of handling effects together. Internally, `handler!`
 /// expands to a single closure with a `match` expression in it, so the arms can all borrow the
 /// same content, even mutably.
 #[proc_macro]
