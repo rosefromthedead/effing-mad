@@ -313,7 +313,7 @@ where
                             let pinned = unsafe { Pin::new_unchecked(&mut handling) };
                             match pinned.resume(handler_inj) {
                                 GeneratorState::Yielded(effs) => {
-                                    handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap()
+                                    handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap();
                                 }
                                 GeneratorState::Complete(inj) => {
                                     injection = PreIs::inject(Tagged::new(inj));
@@ -325,7 +325,7 @@ where
                     // any other effect
                     Err(effs) => {
                         injection =
-                            PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap())
+                            PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap());
                     }
                 },
                 GeneratorState::Complete(ret) => return ret,

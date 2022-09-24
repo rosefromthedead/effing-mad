@@ -326,8 +326,9 @@ impl Parse for Handler {
                         arguments: PathArguments::None,
                     })),
                 },
-                Pat::Path(PatPath { path, .. }) => path.clone(),
-                Pat::TupleStruct(PatTupleStruct { path, .. }) => path.clone(),
+                Pat::Path(PatPath { path, .. }) | Pat::TupleStruct(PatTupleStruct { path, .. }) => {
+                    path.clone()
+                }
                 p => panic!("invalid pattern in handler: {p:?}"),
             };
             let group = TypePath { qself: None, path };
