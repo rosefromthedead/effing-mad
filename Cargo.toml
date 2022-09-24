@@ -4,15 +4,16 @@ members = ["effing-macros"]
 [package]
 name = "effing-mad"
 version = "0.1.0"
+description = "The hottest algebraic effects library in Rust."
 edition = "2021"
-authors = ["Rose Hudson <cv21874@bristol.ac.uk>"]
+authors = ["Rose Hudson <rose@krx.sh>"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 effing-macros = { path = "effing-macros" }
 frunk = { version = "0.4.0", default-features = false }
 
-# for http example
+# for sync-and-async example
 futures = { version = "0.3.23", optional = true, default-features = false }
 reqwest = { version = "0.11.11", optional = true, features = ["blocking"], default-features = false }
 tokio = { version = "1.20.1", optional = true, features = ["rt"], default-features = false }
