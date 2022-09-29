@@ -17,7 +17,7 @@ fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
         {
             use ::core::ops::{Generator, GeneratorState};
-            use ::effing_mad::frunk::Coproduct;
+            use ::effing_mad::coproduct::Coproduct;
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
@@ -25,7 +25,7 @@ fn quote_do(e: &Expr) -> Expr {
                 let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
                 match pinned.resume(injection) {
                     GeneratorState::Yielded(effs) =>
-                        injection = (yield effs.embed()).subset().ok().unwrap(),
+                        injection = (yield effs.embed()).split().ok().unwrap(),
                     GeneratorState::Complete(v) => break v,
                 }
             }
@@ -61,7 +61,7 @@ impl syn::fold::Fold for Effectful {
                     {
                         let effect = { #expr };
                         let marker = ::effing_mad::macro_impl::mark(&effect);
-                        let injs = yield ::effing_mad::frunk::Coproduct::inject(effect);
+                        let injs = yield ::effing_mad::coproduct::Coproduct::inject(effect);
                         ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
                     }
                 }
@@ -102,7 +102,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
     let effect_names = effects.effects.iter();
     let yield_type = quote! {
-        <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
+        <::effing_mad::coproduct::Coproduct!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
     };
     let ItemFn {
         attrs,
@@ -272,7 +272,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
         }
 
         impl #generics ::effing_mad::EffectGroup for #group_name #generics {
-            type Effects = ::effing_mad::frunk::Coprod!(#(#eff_name #generics),*);
+            type Effects = ::effing_mad::coproduct::MkUnion!(#(#eff_name #generics),*);
         }
 
         #(
@@ -385,7 +385,7 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                 };
                 parse_quote! {
                     return ::core::ops::ControlFlow::Continue(
-                        ::effing_mad::frunk::Coproduct::inject(#inj)
+                        ::effing_mad::coproduct::Coproduct::inject(#inj)
                     )
                 }
             }
@@ -448,7 +448,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
         PathArguments::Parenthesized(_) => panic!("stop that"),
     };
 
-    let mut matcher = quote! { match effs {} };
+    let mut matcher = quote! { effs.ex_falso() };
     for arm in arms {
         let HandlerArm { pat, mut body } = arm;
         let eff_ty = match &pat {
@@ -495,7 +495,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
                     Ok(#new_pat) => {
                         let __effing_inj = #body;
                         #[allow(unreachable_code)]
-                        ::effing_mad::frunk::Coproduct::inject(
+                        ::effing_mad::coproduct::Coproduct::inject(
                             ::effing_mad::injection::Tagged::<_, #eff_ty #generics>::new(
                                 __effing_inj
                             )
@@ -509,7 +509,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
     let effs_ty = if is_shorthand {
         quote!(#group)
     } else {
-        quote!(<#group as ::effing_mad::EffectGroup>::Effects)
+        quote!(::effing_mad::coproduct::Coproduct<<#group as ::effing_mad::EffectGroup>::Effects>)
     };
     quote! {
         #moveness |effs: #effs_ty| #asyncness {
