@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 effing-macros = { path = "effing-macros" }
-coproduct = "0.2"
+coproduct = "0.3"
 
 # for sync-and-async example
 futures = { version = "0.3.23", optional = true, default-features = false }

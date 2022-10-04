@@ -7,7 +7,7 @@ pub mod injection;
 pub mod macro_impl;
 
 pub use coproduct;
-use coproduct::{Coproduct, Count, Embed, EmptyUnion, IndexedDrop, Split, Union};
+use coproduct::{Coproduct, Count, Embed, EmptyUnion, IndexedDrop, Merge, Split, Union};
 use core::{
     future::Future,
     ops::{ControlFlow, Generator, GeneratorState},
@@ -262,6 +262,7 @@ pub fn transform<
     EmbedIndices1,
     EmbedIndices2,
     EmbedIndices3,
+    MergeIndices,
 >(
     mut g: G1,
     mut handler: impl FnMut(E) -> H,
@@ -278,6 +279,8 @@ where
     Post::Injections: coproduct::Split<Unhandled::Injections, SubsetIndices1>
         + coproduct::Split<Handler::Injections, SubsetIndices2>,
     G1: Generator<Pre::Injections, Yield = Pre, Return = R>,
+    // for restricting the the parameters to just one impl
+    Unhandled: Merge<Handler, MergeIndices, Merged = Post>,
 {
     move |_begin: Post::Injections| {
         let mut injection = coproduct::inject(Begin);
@@ -316,114 +319,4 @@ where
             }
         }
     }
-}
-
-/// Handle one effect of `g` by running other effects that it already uses.
-///
-/// This function is a special case of [`transform`] for when the handler does not introduce any
-/// effects on top of the ones from `g` that it's not handling.
-///
-/// For introducing a new effect, see [`transform1`].
-pub fn transform0<
-    G1,
-    R,
-    E,
-    H,
-    PreEs,
-    HandlerEs,
-    PostEs,
-    EffIndex,
-    PreIs,
-    HandlerIs,
-    PostIs,
-    I1Index,
-    BeginIndex1,
-    BeginIndex2,
-    BeginIndex3,
-    SubsetIndices1,
-    SubsetIndices2,
-    EmbedIndices1,
-    EmbedIndices2,
-    EmbedIndices3,
->(
-    g: G1,
-    handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
-where
-    E: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + coproduct::At<EffIndex, E, Pruned = PostEs>,
-    HandlerEs: EffectList<Injections = HandlerIs> + Embed<PostEs, EmbedIndices1>,
-    PostEs: EffectList<Injections = PostIs> + Embed<PostEs, EmbedIndices2>,
-    PreIs: coproduct::At<BeginIndex1, Begin>
-        + coproduct::At<I1Index, Tagged<E::Injection, E>, Pruned = PostIs>,
-    HandlerIs: coproduct::At<BeginIndex2, Begin>,
-    PostIs: coproduct::At<BeginIndex3, Begin>
-        + coproduct::Split<HandlerIs, SubsetIndices1>
-        + coproduct::Split<PostIs, SubsetIndices2>
-        + Embed<PreIs, EmbedIndices3>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
-{
-    transform(g, handler)
-}
-
-/// Handle one effect of `g` by running a new effect.
-///
-/// This function is a special case of [`transform`] for when the handler introduces one effect on
-/// top of the ones from `g` that it's not handling.
-///
-/// It is possible for the handler to run effects from `g` as well as the effect that it introduces.
-///
-/// To transform without introducing any effects, see [`transform0`].
-pub fn transform1<
-    G1,
-    R,
-    E1,
-    E2,
-    H,
-    PreEs,
-    PreHandleEs: EffectList + IndexedDrop,
-    HandlerEs,
-    E1Index,
-    PreIs,
-    PreHandleIs: IndexedDrop,
-    HandlerIs,
-    I1Index,
-    BeginIndex1,
-    BeginIndex2,
-    BeginIndex3,
-    SubsetIndices1,
-    SubsetIndices2,
-    EmbedIndices1,
-    EmbedIndices2,
-    EmbedIndices3,
->(
-    g: G1,
-    handler: impl FnMut(E1) -> H,
-) -> impl Generator<
-    Coproduct<Union<Tagged<E2::Injection, E2>, PreHandleEs::Injections>>,
-    Yield = Coproduct<Union<E2, PreHandleEs>>,
-    Return = R,
->
-where
-    E1: Effect,
-    E2: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
-    PreEs: EffectList<Injections = PreIs>
-        + coproduct::At<E1Index, E1, Pruned = Coproduct<PreHandleEs>>,
-    Coproduct<PreHandleEs>: EffectList<Injections = Coproduct<PreHandleIs>>
-        + Embed<Coproduct<Union<E2, PreHandleEs>>, EmbedIndices1>,
-    PreHandleEs::Injections: IndexedDrop,
-    HandlerEs: EffectList<Injections = HandlerIs>
-        + Embed<Coproduct<Union<E2, PreHandleEs>>, EmbedIndices2>,
-    PreIs: coproduct::At<BeginIndex1, Begin>
-        + coproduct::At<I1Index, Tagged<E1::Injection, E1>, Pruned = Coproduct<PreHandleIs>>,
-    Coproduct<PreHandleIs>: Embed<PreIs, EmbedIndices3>,
-    HandlerIs: coproduct::At<BeginIndex2, Begin>,
-    Coproduct<Union<Tagged<E2::Injection, E2>, PreHandleEs::Injections>>: coproduct::At<BeginIndex3, Begin>
-        + coproduct::Split<HandlerIs, SubsetIndices1>
-        + coproduct::Split<Coproduct<PreHandleIs>, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
-{
-    transform(g, handler)
 }

@@ -3,16 +3,15 @@
 
 use core::ops::ControlFlow;
 
-use effing_mad::{effectful, handle, run, transform0, transform1, Effect};
+use coproduct::IdType;
+use effing_mad::{effectful, handle, run, transform, Effect};
 
 fn main() {
     let work = take_over_the_world();
     // Log, Lunchtime -> Print, Lunchtime
-    // Introducing 1 new effect (Print) so must use transform1
-    let transformed = transform1(work, print_log);
+    let transformed = transform(work, print_log);
     // Print, Lunchtime -> Print
-    // Not introducing new effects so must use transform0
-    let transformed = transform0(transformed, print_lunchtime);
+    let transformed = transform(transformed, print_lunchtime);
     let handled = handle(transformed, |Print(message)| {
         println!("{message}");
         ControlFlow::Continue(())
@@ -20,16 +19,19 @@ fn main() {
     run(handled);
 }
 
+#[derive(IdType)]
 struct Print(String);
 impl Effect for Print {
     type Injection = ();
 }
 
+#[derive(IdType)]
 struct Log(String, i32);
 impl Effect for Log {
     type Injection = ();
 }
 
+#[derive(IdType)]
 struct Lunchtime;
 impl Effect for Lunchtime {
     type Injection = ();
