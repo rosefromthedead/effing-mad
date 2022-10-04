@@ -7,7 +7,7 @@ pub mod injection;
 pub mod macro_impl;
 
 pub use coproduct;
-use coproduct::{Coproduct, Count, Embed, EmptyUnion, IndexedDrop, Union};
+use coproduct::{Coproduct, Count, Embed, EmptyUnion, IndexedDrop, Split, Union};
 use core::{
     future::Future,
     ops::{ControlFlow, Generator, GeneratorState},
@@ -249,18 +249,13 @@ pub fn transform<
     R,
     E: Effect,
     H,
-    PreEs,
-    PreHandleEs,
-    HandlerEs,
-    PostEs,
+    Pre: EffectList,
+    Unhandled: EffectList,
+    Handler: EffectList,
+    Post: EffectList,
     EffIndex,
-    PreIs,
-    PreHandleIs,
-    HandlerIs,
-    PostIs,
     BeginIndex1,
     BeginIndex2,
-    BeginIndex3,
     InjIndex,
     SubsetIndices1,
     SubsetIndices2,
@@ -270,26 +265,22 @@ pub fn transform<
 >(
     mut g: G1,
     mut handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Generator<Post::Injections, Yield = Post, Return = R>
 where
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + coproduct::At<EffIndex, E, Pruned = PreHandleEs>,
-    PreHandleEs: EffectList<Injections = PreHandleIs> + Embed<PostEs, EmbedIndices1>,
-    HandlerEs: EffectList<Injections = HandlerIs> + Embed<PostEs, EmbedIndices2>,
-    PostEs: EffectList<Injections = PostIs>,
-    PreIs: coproduct::At<BeginIndex1, Begin>
-        + coproduct::At<InjIndex, Tagged<E::Injection, E>, Pruned = PreHandleIs>,
-    PreHandleIs: Embed<PreIs, EmbedIndices3>,
-    HandlerIs: coproduct::At<BeginIndex2, Begin>,
-    PostIs: coproduct::At<BeginIndex3, Begin>
-        + coproduct::Split<
-            <PreIs as coproduct::At<InjIndex, Tagged<E::Injection, E>>>::Pruned,
-            SubsetIndices1,
-        > + coproduct::Split<HandlerIs, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+    H: Generator<Handler::Injections, Yield = Handler, Return = E::Injection>,
+    Pre: coproduct::At<EffIndex, E, Pruned = Unhandled>,
+    Unhandled: Embed<Post, EmbedIndices1>,
+    Handler: Embed<Post, EmbedIndices2>,
+    Pre::Injections: coproduct::At<BeginIndex1, Begin>
+        + coproduct::At<InjIndex, Tagged<E::Injection, E>, Pruned = Unhandled::Injections>,
+    Unhandled::Injections: Embed<Pre::Injections, EmbedIndices3>,
+    Handler::Injections: coproduct::At<BeginIndex2, Begin>,
+    Post::Injections: coproduct::Split<Unhandled::Injections, SubsetIndices1>
+        + coproduct::Split<Handler::Injections, SubsetIndices2>,
+    G1: Generator<Pre::Injections, Yield = Pre, Return = R>,
 {
-    move |_begin: PostIs| {
-        let mut injection = PreIs::inject(Begin);
+    move |_begin: Post::Injections| {
+        let mut injection = coproduct::inject(Begin);
         loop {
             // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
@@ -298,16 +289,17 @@ where
                     // the effect we are handling
                     Ok(eff) => {
                         let mut handling = handler(eff);
-                        let mut handler_inj = HandlerIs::inject(Begin);
+                        let mut handler_inj = coproduct::inject(Begin);
                         'run_handler: loop {
                             // safety: same again
                             let pinned = unsafe { Pin::new_unchecked(&mut handling) };
                             match pinned.resume(handler_inj) {
                                 GeneratorState::Yielded(effs) => {
-                                    handler_inj = PostIs::split(yield effs.embed()).ok().unwrap();
+                                    let effs: Post::Injections = yield effs.embed();
+                                    handler_inj = effs.split().ok().unwrap();
                                 }
                                 GeneratorState::Complete(inj) => {
-                                    injection = PreIs::inject(Tagged::new(inj));
+                                    injection = coproduct::inject(Tagged::new(inj));
                                     break 'run_handler;
                                 }
                             }
@@ -315,8 +307,9 @@ where
                     }
                     // any other effect
                     Err(effs) => {
-                        injection =
-                            PreHandleIs::embed(PostIs::split(yield effs.embed()).ok().unwrap());
+                        let effs: Post::Injections = yield effs.embed();
+                        let inj: Unhandled::Injections = effs.split().ok().unwrap();
+                        injection = inj.embed();
                     }
                 },
                 GeneratorState::Complete(ret) => return ret,
