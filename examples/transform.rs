@@ -3,7 +3,6 @@
 
 use core::ops::ControlFlow;
 
-use coproduct::IdType;
 use effing_mad::{effectful, handle, run, transform, Effect};
 
 fn main() {
@@ -19,19 +18,16 @@ fn main() {
     run(handled);
 }
 
-#[derive(IdType)]
 struct Print(String);
 impl Effect for Print {
     type Injection = ();
 }
 
-#[derive(IdType)]
 struct Log(String, i32);
 impl Effect for Log {
     type Injection = ();
 }
 
-#[derive(IdType)]
 struct Lunchtime;
 impl Effect for Lunchtime {
     type Injection = ();
