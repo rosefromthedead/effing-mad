@@ -7,7 +7,7 @@ pub mod injection;
 pub mod macro_impl;
 
 pub use coproduct;
-use coproduct::{Coproduct, Count, Embed, EmptyUnion, IndexedDrop, Merge, Split, Union};
+use coproduct::{Coproduct, Count, Embed, EmptyUnion, Merge, Split, Union};
 use core::{
     future::Future,
     ops::{ControlFlow, Generator, GeneratorState},
