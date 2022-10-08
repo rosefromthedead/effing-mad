@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use frunk::{coproduct::CNil, Coproduct};
+use coproduct::{Coproduct, EmptyUnion, IndexedDrop, Union};
 
 use crate::Effect;
 
@@ -37,10 +37,17 @@ pub trait EffectList {
     type Injections;
 }
 
-impl EffectList for CNil {
-    type Injections = Coproduct<Begin, CNil>;
+impl<U: EffectList + IndexedDrop> EffectList for Coproduct<U>
+where
+    U::Injections: IndexedDrop,
+{
+    type Injections = Coproduct<U::Injections>;
 }
 
-impl<E: Effect, Es: EffectList> EffectList for Coproduct<E, Es> {
-    type Injections = Coproduct<Tagged<E::Injection, E>, Es::Injections>;
+impl EffectList for EmptyUnion {
+    type Injections = Union<Begin, EmptyUnion>;
+}
+
+impl<E: Effect, Es: EffectList> EffectList for Union<E, Es> {
+    type Injections = Union<Tagged<E::Injection, E>, Es::Injections>;
 }

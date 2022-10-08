@@ -3,16 +3,14 @@
 
 use core::ops::ControlFlow;
 
-use effing_mad::{effectful, handle, run, transform0, transform1, Effect};
+use effing_mad::{effectful, handle, run, transform, Effect};
 
 fn main() {
     let work = take_over_the_world();
     // Log, Lunchtime -> Print, Lunchtime
-    // Introducing 1 new effect (Print) so must use transform1
-    let transformed = transform1(work, print_log);
+    let transformed = transform(work, print_log);
     // Print, Lunchtime -> Print
-    // Not introducing new effects so must use transform0
-    let transformed = transform0(transformed, print_lunchtime);
+    let transformed = transform(transformed, print_lunchtime);
     let handled = handle(transformed, |Print(message)| {
         println!("{message}");
         ControlFlow::Continue(())

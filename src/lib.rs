@@ -3,19 +3,15 @@
 #![feature(pin_macro)]
 #![no_std]
 
-pub use frunk;
-
 pub mod injection;
 pub mod macro_impl;
 
+pub use coproduct;
+use coproduct::{Coproduct, Count, Embed, EmptyUnion, Merge, Split, Union};
 use core::{
     future::Future,
     ops::{ControlFlow, Generator, GeneratorState},
     pin::Pin,
-};
-use frunk::{
-    coproduct::{CNil, CoprodInjector, CoprodUninjector, CoproductEmbedder, CoproductSubsetter},
-    Coprod, Coproduct,
 };
 
 pub use effing_macros::{effectful, effects, handler};
@@ -32,11 +28,11 @@ pub enum Never {}
 /// will never yield. Therefore they can be run by resuming them once. This function does that.
 pub fn run<F, R>(mut f: F) -> R
 where
-    F: Generator<Coproduct<Begin, CNil>, Yield = CNil, Return = R>,
+    F: Generator<Coproduct<Union<Begin, EmptyUnion>>, Yield = Coproduct<EmptyUnion>, Return = R>,
 {
     let pinned = core::pin::pin!(f);
-    match pinned.resume(Coproduct::Inl(Begin)) {
-        GeneratorState::Yielded(never) => match never {},
+    match pinned.resume(coproduct::inject(Begin)) {
+        GeneratorState::Yielded(absurd) => absurd.ex_falso(),
         GeneratorState::Complete(ret) => ret,
     }
 }
@@ -53,7 +49,7 @@ pub trait EffectGroup {
 }
 
 impl<E: Effect> EffectGroup for E {
-    type Effects = Coproduct<E, CNil>;
+    type Effects = Union<E, EmptyUnion>;
 }
 
 /// Create a new effectful computation by applying a pure function to the return value of an
@@ -87,35 +83,34 @@ pub fn map<E, I, T, U>(
 pub fn handle<
     G,
     R,
-    E,
-    PreEs,
-    PostEs,
-    EffIndex,
-    PreIs,
-    PostIs,
-    BeginIndex,
+    All: EffectList,
+    Handled: Effect,
+    Unhandled: EffectList,
+    BeginIndex: Count,
     InjIndex,
     InjsIndices,
     EmbedIndices,
+    SplitIndices,
 >(
     g: G,
-    mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+    mut handler: impl FnMut(Handled) -> ControlFlow<R, Handled::Injection>,
+) -> impl Generator<Unhandled::Injections, Yield = Unhandled, Return = R>
 where
-    E: Effect,
-    Coprod!(Tagged<E::Injection, E>, Begin): CoproductEmbedder<PreIs, InjsIndices>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
-    PostEs: EffectList<Injections = PostIs>,
-    PreIs: CoprodInjector<Begin, BeginIndex> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
-    PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
-    G: Generator<PreIs, Yield = PreEs, Return = R>,
+    All::Injections: coproduct::At<BeginIndex, Begin>
+        + coproduct::At<InjIndex, Tagged<Handled::Injection, Handled>>,
+    All: coproduct::Split<Coproduct!(Handled), SplitIndices, Remainder = Unhandled>,
+    Coproduct!(Tagged<Handled::Injection, Handled>, Begin): Embed<All::Injections, InjsIndices>,
+    Unhandled::Injections: Embed<All::Injections, EmbedIndices>,
+    G: Generator<All::Injections, Yield = All, Return = R>,
 {
-    handle_group(g, move |effs| match effs {
-        Coproduct::Inl(eff) => match handler(eff) {
-            ControlFlow::Continue(inj) => ControlFlow::Continue(Coproduct::Inl(Tagged::new(inj))),
+    handle_group(g, move |effs: Coproduct!(Handled)| match effs.take_head() {
+        Ok(eff) => match handler(eff) {
+            ControlFlow::Continue(inj) => {
+                ControlFlow::Continue(coproduct::inject(Tagged::new(inj)))
+            }
             ControlFlow::Break(ret) => ControlFlow::Break(ret),
         },
-        Coproduct::Inr(never) => match never {},
+        Err(absurd) => absurd.ex_falso(),
     })
 }
 
@@ -128,7 +123,7 @@ where
 /// [`ControlFlow::Continue`](core::ops::ControlFlow::Continue) and
 /// [`ControlFlow::Break`](core::ops::ControlFlow::Break) respectively.
 ///
-/// `Es` must be a [`Coproduct`](frunk::Coproduct) of effects.
+/// `Handled` must be a [`Coproduct`](coproduct::Coproduct) of effects.
 ///
 /// Care should be taken to only produce an injection type when handling the corresponding effect.
 /// If the injection type does not match the effect that is being handled, the computation will
@@ -136,38 +131,33 @@ where
 pub fn handle_group<
     G,
     R,
-    Es,
-    Is,
-    PreEs,
-    PostEs,
-    PreIs,
-    PostIs,
+    All: EffectList,
+    Handled: EffectList,
+    Unhandled: EffectList,
     EffsIndices,
     InjsIndices,
-    BeginIndex,
+    BeginIndex: Count,
     EmbedIndices,
 >(
     mut g: G,
-    mut handler: impl FnMut(Es) -> ControlFlow<R, Is>,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+    mut handler: impl FnMut(Handled) -> ControlFlow<R, Handled::Injections>,
+) -> impl Generator<Unhandled::Injections, Yield = Unhandled, Return = R>
 where
-    Es: EffectList<Injections = Is>,
-    Is: CoproductEmbedder<PreIs, InjsIndices>,
-    PreEs: EffectList<Injections = PreIs> + CoproductSubsetter<Es, EffsIndices, Remainder = PostEs>,
-    PostEs: EffectList<Injections = PostIs>,
-    PreIs: CoprodInjector<Begin, BeginIndex>,
-    PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
-    G: Generator<PreIs, Yield = PreEs, Return = R>,
+    All::Injections: coproduct::At<BeginIndex, Begin>,
+    All: coproduct::Split<Handled, EffsIndices, Remainder = Unhandled>,
+    Handled::Injections: Embed<All::Injections, InjsIndices>,
+    Unhandled::Injections: Embed<All::Injections, EmbedIndices>,
+    G: Generator<All::Injections, Yield = All, Return = R>,
 {
-    move |_begin: PostIs| {
-        let mut injection = PreIs::inject(Begin);
+    move |_begin: Unhandled::Injections| {
+        let mut injection = coproduct::inject(Begin);
         loop {
             // safety: im 90% sure that since we are inside Generator::resume which takes
             // Pin<&mut self>, all locals in this function are effectively pinned and this call is
             // simply projecting that
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
-                GeneratorState::Yielded(effs) => match effs.subset() {
+                GeneratorState::Yielded(effs) => match effs.split() {
                     Ok(effs) => match handler(effs) {
                         ControlFlow::Continue(injs) => injection = injs.embed(),
                         ControlFlow::Break(ret) => return ret,
@@ -190,22 +180,24 @@ where
 pub async fn handle_async<Eff, G, Fut>(mut g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
 where
     Eff: Effect,
-    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff)>,
+    G: Generator<Coproduct!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coproduct!(Eff)>,
     Fut: Future<Output = ControlFlow<G::Return, Eff::Injection>>,
 {
-    let mut injs = Coproduct::inject(Begin);
+    let mut injs = coproduct::inject(Begin);
     loop {
         // safety: see handle_group() - remember that futures are pinned in the same way as
         // generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(injs) {
             GeneratorState::Yielded(effs) => {
-                let eff = match effs {
-                    Coproduct::Inl(v) => v,
-                    Coproduct::Inr(never) => match never {},
+                let eff = match effs.take_head() {
+                    Ok(v) => v,
+                    Err(never) => never.ex_falso(),
                 };
                 match handler(eff).await {
-                    ControlFlow::Continue(new_injs) => injs = Coproduct::Inl(Tagged::new(new_injs)),
+                    ControlFlow::Continue(new_injs) => {
+                        injs = coproduct::inject(Tagged::new(new_injs))
+                    }
                     ControlFlow::Break(ret) => return ret,
                 }
             }
@@ -227,7 +219,7 @@ pub async fn handle_group_async<G, Fut, Es, Is, BeginIndex>(
 ) -> G::Return
 where
     Es: EffectList<Injections = Is>,
-    Is: CoprodInjector<Begin, BeginIndex>,
+    Is: coproduct::At<BeginIndex, Begin>,
     G: Generator<Is, Yield = Es>,
     Fut: Future<Output = ControlFlow<G::Return, Is>>,
 {
@@ -255,50 +247,43 @@ where
 pub fn transform<
     G1,
     R,
-    E,
+    E: Effect,
     H,
-    PreEs,
-    PreHandleEs,
-    HandlerEs,
-    PostEs,
+    Pre: EffectList,
+    Unhandled: EffectList,
+    Handler: EffectList,
+    Post: EffectList,
     EffIndex,
-    PreIs,
-    PreHandleIs,
-    HandlerIs,
-    PostIs,
     BeginIndex1,
     BeginIndex2,
-    BeginIndex3,
     InjIndex,
     SubsetIndices1,
     SubsetIndices2,
     EmbedIndices1,
     EmbedIndices2,
     EmbedIndices3,
+    MergeIndices,
 >(
     mut g: G1,
     mut handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Generator<Post::Injections, Yield = Post, Return = R>
 where
-    E: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
-    PreHandleEs: EffectList<Injections = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
-    HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
-    PostEs: EffectList<Injections = PostIs>,
-    PreIs: CoprodInjector<Begin, BeginIndex1>
-        + CoprodUninjector<Tagged<E::Injection, E>, InjIndex, Remainder = PreHandleIs>,
-    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices3>,
-    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
-    PostIs: CoprodInjector<Begin, BeginIndex3>
-        + CoproductSubsetter<
-            <PreIs as CoprodUninjector<Tagged<E::Injection, E>, InjIndex>>::Remainder,
-            SubsetIndices1,
-        > + CoproductSubsetter<HandlerIs, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+    H: Generator<Handler::Injections, Yield = Handler, Return = E::Injection>,
+    Pre: coproduct::At<EffIndex, E, Pruned = Unhandled>,
+    Unhandled: Embed<Post, EmbedIndices1>,
+    Handler: Embed<Post, EmbedIndices2>,
+    Pre::Injections: coproduct::At<BeginIndex1, Begin>
+        + coproduct::At<InjIndex, Tagged<E::Injection, E>, Pruned = Unhandled::Injections>,
+    Unhandled::Injections: Embed<Pre::Injections, EmbedIndices3>,
+    Handler::Injections: coproduct::At<BeginIndex2, Begin>,
+    Post::Injections: coproduct::Split<Unhandled::Injections, SubsetIndices1>
+        + coproduct::Split<Handler::Injections, SubsetIndices2>,
+    G1: Generator<Pre::Injections, Yield = Pre, Return = R>,
+    // for restricting the the parameters to just one impl
+    Unhandled: Merge<Handler, MergeIndices, Merged = Post>,
 {
-    move |_begin: PostIs| {
-        let mut injection = PreIs::inject(Begin);
+    move |_begin: Post::Injections| {
+        let mut injection = coproduct::inject(Begin);
         loop {
             // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
@@ -307,16 +292,17 @@ where
                     // the effect we are handling
                     Ok(eff) => {
                         let mut handling = handler(eff);
-                        let mut handler_inj = HandlerIs::inject(Begin);
+                        let mut handler_inj = coproduct::inject(Begin);
                         'run_handler: loop {
                             // safety: same again
                             let pinned = unsafe { Pin::new_unchecked(&mut handling) };
                             match pinned.resume(handler_inj) {
                                 GeneratorState::Yielded(effs) => {
-                                    handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap();
+                                    let effs: Post::Injections = yield effs.embed();
+                                    handler_inj = effs.split().ok().unwrap();
                                 }
                                 GeneratorState::Complete(inj) => {
-                                    injection = PreIs::inject(Tagged::new(inj));
+                                    injection = coproduct::inject(Tagged::new(inj));
                                     break 'run_handler;
                                 }
                             }
@@ -324,120 +310,13 @@ where
                     }
                     // any other effect
                     Err(effs) => {
-                        injection =
-                            PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap());
+                        let effs: Post::Injections = yield effs.embed();
+                        let inj: Unhandled::Injections = effs.split().ok().unwrap();
+                        injection = inj.embed();
                     }
                 },
                 GeneratorState::Complete(ret) => return ret,
             }
         }
     }
-}
-
-/// Handle one effect of `g` by running other effects that it already uses.
-///
-/// This function is a special case of [`transform`] for when the handler does not introduce any
-/// effects on top of the ones from `g` that it's not handling.
-///
-/// For introducing a new effect, see [`transform1`].
-pub fn transform0<
-    G1,
-    R,
-    E,
-    H,
-    PreEs,
-    HandlerEs,
-    PostEs,
-    EffIndex,
-    PreIs,
-    HandlerIs,
-    PostIs,
-    I1Index,
-    BeginIndex1,
-    BeginIndex2,
-    BeginIndex3,
-    SubsetIndices1,
-    SubsetIndices2,
-    EmbedIndices1,
-    EmbedIndices2,
-    EmbedIndices3,
->(
-    g: G1,
-    handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
-where
-    E: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
-    HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
-    PostEs: EffectList<Injections = PostIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
-    PreIs: CoprodInjector<Begin, BeginIndex1>
-        + CoprodUninjector<Tagged<E::Injection, E>, I1Index, Remainder = PostIs>,
-    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
-    PostIs: CoprodInjector<Begin, BeginIndex3>
-        + CoproductSubsetter<HandlerIs, SubsetIndices1>
-        + CoproductSubsetter<PostIs, SubsetIndices2>
-        + CoproductEmbedder<PreIs, EmbedIndices3>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
-{
-    transform(g, handler)
-}
-
-/// Handle one effect of `g` by running a new effect.
-///
-/// This function is a special case of [`transform`] for when the handler introduces one effect on
-/// top of the ones from `g` that it's not handling.
-///
-/// It is possible for the handler to run effects from `g` as well as the effect that it introduces.
-///
-/// To transform without introducing any effects, see [`transform0`].
-pub fn transform1<
-    G1,
-    R,
-    E1,
-    E2,
-    H,
-    PreEs,
-    PreHandleEs,
-    HandlerEs,
-    E1Index,
-    PreIs,
-    PreHandleIs,
-    HandlerIs,
-    I1Index,
-    BeginIndex1,
-    BeginIndex2,
-    BeginIndex3,
-    SubsetIndices1,
-    SubsetIndices2,
-    EmbedIndices1,
-    EmbedIndices2,
-    EmbedIndices3,
->(
-    g: G1,
-    handler: impl FnMut(E1) -> H,
-) -> impl Generator<
-    Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>,
-    Yield = Coproduct<E2, PreHandleEs>,
-    Return = R,
->
-where
-    E1: Effect,
-    E2: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
-    PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E1, E1Index, Remainder = PreHandleEs>,
-    PreHandleEs: EffectList<Injections = PreHandleIs>
-        + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices1>,
-    HandlerEs: EffectList<Injections = HandlerIs>
-        + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices2>,
-    PreIs: CoprodInjector<Begin, BeginIndex1>
-        + CoprodUninjector<Tagged<E1::Injection, E1>, I1Index, Remainder = PreHandleIs>,
-    PreHandleIs: CoproductEmbedder<PreIs, EmbedIndices3>,
-    HandlerIs: CoprodInjector<Begin, BeginIndex2>,
-    Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>: CoprodInjector<Begin, BeginIndex3>
-        + CoproductSubsetter<HandlerIs, SubsetIndices1>
-        + CoproductSubsetter<PreHandleIs, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
-{
-    transform(g, handler)
 }
