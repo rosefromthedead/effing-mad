@@ -17,9 +17,8 @@ fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
         {
             use ::core::ops::{Generator, GeneratorState};
-            use ::effing_mad::coproduct::Coproduct;
             let mut gen = #e;
-            let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
+            let mut injection = ::effing_mad::coproduct::inject(::effing_mad::injection::Begin);
             loop {
                 // safety: same as in `handle_group`
                 let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
@@ -61,7 +60,7 @@ impl syn::fold::Fold for Effectful {
                     {
                         let effect = { #expr };
                         let marker = ::effing_mad::macro_impl::mark(&effect);
-                        let injs = yield ::effing_mad::coproduct::Coproduct::inject(effect);
+                        let injs = yield ::effing_mad::coproduct::inject(effect);
                         ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
                     }
                 }
@@ -385,7 +384,7 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                 };
                 parse_quote! {
                     return ::core::ops::ControlFlow::Continue(
-                        ::effing_mad::coproduct::Coproduct::inject(#inj)
+                        ::effing_mad::coproduct::inject(#inj)
                     )
                 }
             }
@@ -495,7 +494,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
                     Ok(#new_pat) => {
                         let __effing_inj = #body;
                         #[allow(unreachable_code)]
-                        ::effing_mad::coproduct::Coproduct::inject(
+                        ::effing_mad::coproduct::inject(
                             ::effing_mad::injection::Tagged::<_, #eff_ty #generics>::new(
                                 __effing_inj
                             )

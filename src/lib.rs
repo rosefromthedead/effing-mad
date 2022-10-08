@@ -31,7 +31,7 @@ where
     F: Generator<Coproduct<Union<Begin, EmptyUnion>>, Yield = Coproduct<EmptyUnion>, Return = R>,
 {
     let pinned = core::pin::pin!(f);
-    match pinned.resume(Coproduct::inject(Begin)) {
+    match pinned.resume(coproduct::inject(Begin)) {
         GeneratorState::Yielded(absurd) => absurd.ex_falso(),
         GeneratorState::Complete(ret) => ret,
     }
@@ -106,7 +106,7 @@ where
     handle_group(g, move |effs: Coproduct!(Handled)| match effs.take_head() {
         Ok(eff) => match handler(eff) {
             ControlFlow::Continue(inj) => {
-                ControlFlow::Continue(Coproduct::inject(Tagged::new(inj)))
+                ControlFlow::Continue(coproduct::inject(Tagged::new(inj)))
             }
             ControlFlow::Break(ret) => ControlFlow::Break(ret),
         },
@@ -183,7 +183,7 @@ where
     G: Generator<Coproduct!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coproduct!(Eff)>,
     Fut: Future<Output = ControlFlow<G::Return, Eff::Injection>>,
 {
-    let mut injs = Coproduct::inject(Begin);
+    let mut injs = coproduct::inject(Begin);
     loop {
         // safety: see handle_group() - remember that futures are pinned in the same way as
         // generators
@@ -196,7 +196,7 @@ where
                 };
                 match handler(eff).await {
                     ControlFlow::Continue(new_injs) => {
-                        injs = Coproduct::inject(Tagged::new(new_injs))
+                        injs = coproduct::inject(Tagged::new(new_injs))
                     }
                     ControlFlow::Break(ret) => return ret,
                 }
