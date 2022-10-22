@@ -44,29 +44,28 @@ impl Parse for Effectful {
     }
 }
 
-impl syn::fold::Fold for Effectful {
-    fn fold_expr(&mut self, e: Expr) -> Expr {
+impl syn::visit_mut::VisitMut for Effectful {
+    fn visit_expr_mut(&mut self, e: &mut Expr) {
         match e {
-            Expr::Field(ref ef) => {
-                let Member::Named(ref name) = ef.member else { return e };
+            Expr::Field(ref mut ef) => {
+                self.visit_expr_mut(&mut *ef.base);
+                let Member::Named(ref name) = ef.member else { return };
                 if name == "do_" {
-                    quote_do(&ef.base)
-                } else {
-                    e
+                    *e = quote_do(&ef.base);
                 }
             }
             Expr::Yield(ref y) => {
                 let Some(ref expr) = y.expr else { panic!("no expr?") };
-                parse_quote! {
+                *e = parse_quote! {
                     {
                         let effect = { #expr };
                         let marker = ::effing_mad::macro_impl::mark(&effect);
                         let injs = yield ::effing_mad::frunk::Coproduct::inject(effect);
                         ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
                     }
-                }
+                };
             }
-            e => e,
+            e => syn::visit_mut::visit_expr_mut(self, e),
         }
     }
 }
@@ -108,7 +107,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         attrs,
         vis,
         sig,
-        block,
+        mut block,
     } = parse_macro_input!(item as ItemFn);
     let Signature {
         constness,
@@ -123,7 +122,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         ReturnType::Default => quote!(()),
         ReturnType::Type(_r_arrow, ref ty) => ty.to_token_stream(),
     };
-    let new_block = syn::fold::fold_block(&mut effects, *block);
+    syn::visit_mut::visit_block_mut(&mut effects, &mut *block);
     quote! {
         #(#attrs)*
         #vis #constness #unsafety
@@ -134,7 +133,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             Return = #return_type
         > {
             move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
-                #new_block
+                #block
             }
         }
     }
@@ -362,8 +361,8 @@ struct FixControlFlow<T: ToTokens> {
     is_shorthand: bool,
 }
 
-impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
-    fn fold_expr(&mut self, e: Expr) -> Expr {
+impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
+    fn visit_expr_mut(&mut self, e: &mut Expr) {
         let eff = &self.eff_ty;
         match e {
             Expr::Break(ExprBreak { expr, .. }) => {
@@ -371,7 +370,7 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                     .as_ref()
                     .map(ToTokens::to_token_stream)
                     .unwrap_or(quote!(()));
-                parse_quote!(return ::core::ops::ControlFlow::Break(#expr))
+                *e = parse_quote!(return ::core::ops::ControlFlow::Break(#expr));
             }
             Expr::Return(ExprReturn { expr, .. }) => {
                 let expr = expr
@@ -383,13 +382,13 @@ impl<T: ToTokens> syn::fold::Fold for FixControlFlow<T> {
                 } else {
                     quote!(::effing_mad::injection::Tagged::<_, #eff>::new(#expr))
                 };
-                parse_quote! {
+                *e = parse_quote! {
                     return ::core::ops::ControlFlow::Continue(
                         ::effing_mad::frunk::Coproduct::inject(#inj)
-                    )
-                }
+                    );
+                };
             }
-            e => e,
+            e => syn::visit_mut::visit_expr_mut(self, e),
         }
     }
 }
@@ -475,12 +474,12 @@ pub fn handler(input: TokenStream) -> TokenStream {
         if let Expr::Break(_) | Expr::Return(_) = body {
             body = parse_quote!({ #body });
         }
-        body = syn::fold::fold_expr(
+        syn::visit_mut::visit_expr_mut(
             &mut FixControlFlow {
                 eff_ty: &eff_ty,
                 is_shorthand,
             },
-            body.clone(),
+            &mut body,
         );
         if is_shorthand {
             matcher = quote! {
