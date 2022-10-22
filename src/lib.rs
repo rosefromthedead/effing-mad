@@ -5,6 +5,7 @@
 
 pub use frunk;
 
+pub mod higher_order;
 pub mod injection;
 pub mod macro_impl;
 
