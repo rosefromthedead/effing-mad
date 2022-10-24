@@ -1,10 +1,11 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(pin_macro)]
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 pub use frunk;
 
+pub mod effects;
 pub mod injection;
 pub mod macro_impl;
 

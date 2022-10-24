@@ -21,9 +21,14 @@ fn quote_do(e: &Expr) -> Expr {
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
-                // safety: same as in `handle_group`
-                let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
-                match pinned.resume(injection) {
+                // interesting hack to trick the borrow checker
+                // allows cloneable generators
+                let res = {
+                    // safety: same as in `handle_group`
+                    let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
+                    pinned.resume(injection)
+                };
+                match res {
                     GeneratorState::Yielded(effs) =>
                         injection = (yield effs.embed()).subset().ok().unwrap(),
                     GeneratorState::Complete(v) => break v,
@@ -104,7 +109,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
     };
     let ItemFn {
-        attrs,
+        mut attrs,
         vis,
         sig,
         mut block,
@@ -123,6 +128,15 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         ReturnType::Type(_r_arrow, ref ty) => ty.to_token_stream(),
     };
     syn::visit_mut::visit_block_mut(&mut effects, &mut *block);
+    let mut cloneable = false;
+    attrs.retain(|attr| {
+        if attr.path == parse_quote!(effectful::cloneable) {
+            cloneable = true;
+            return false; // remove it from the attrs list so no one gets confused
+        }
+        return true;
+    });
+    let clone_bound = cloneable.then_some(quote!( + ::core::clone::Clone + ::core::marker::Unpin));
     quote! {
         #(#attrs)*
         #vis #constness #unsafety
@@ -131,7 +145,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             <#yield_type as ::effing_mad::injection::EffectList>::Injections,
             Yield = #yield_type,
             Return = #return_type
-        > {
+        > #clone_bound {
             move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
                 #block
             }
