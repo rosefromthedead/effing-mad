@@ -10,6 +10,7 @@ use crate::Effect;
 /// effects have been run yet. However, due to the signature of
 /// [`Generator::resume`](core::ops::Generator::resume), it is necessary to pass one in anyway.
 /// This type is used as a first injection for all effectful computations.
+#[derive(Clone, Copy)]
 pub struct Begin;
 
 /// Tagging a value with `PhantomData` of another type allows it to be distinguished from other
@@ -25,6 +26,12 @@ impl<T, Tag> Tagged<T, Tag> {
 
     pub fn untag(self) -> T {
         self.0
+    }
+}
+
+impl<T: Clone, Tag> Clone for Tagged<T, Tag> {
+    fn clone(&self) -> Self {
+        Tagged::new(self.0.clone())
     }
 }
 
