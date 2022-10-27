@@ -84,6 +84,7 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// # Usage
 /// ```rust
 /// #[effectful(A, B)]
+/// /* optionally: */ #[effectful::cloneable]
 /// fn cool_function(arg: Foo) -> Bar {
 ///     yield expr_a;
 ///     let val = yield expr_b;
@@ -101,6 +102,12 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// of its effects to the caller of the current function. The callee's effects must be a subset of
 /// the current function's effects - in this example, a subset of `{A, B}`. The callee is usually
 /// another function defined using this macro.
+///
+/// It is possible to create effectful functions whose computations can be cloned. This requires
+/// marking the function as `#[effectful::cloneable]` after the `#[effectful(...)]` invocation,
+/// the function to have only `Clone` and `Unpin` locals, and the function to never hold a
+/// reference to a local across a yield point. In other words, the underlying generator must be
+/// `Clone` and `Unpin`.
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
