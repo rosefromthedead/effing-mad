@@ -21,9 +21,14 @@ fn quote_do(e: &Expr) -> Expr {
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
-                // safety: same as in `handle_group`
-                let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
-                match pinned.resume(injection) {
+                // interesting hack to trick the borrow checker
+                // allows cloneable generators
+                let res = {
+                    // safety: same as in `handle_group`
+                    let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
+                    pinned.resume(injection)
+                };
+                match res {
                     GeneratorState::Yielded(effs) =>
                         injection = (yield effs.embed()).subset().ok().unwrap(),
                     GeneratorState::Complete(v) => break v,
@@ -79,6 +84,7 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// # Usage
 /// ```rust
 /// #[effectful(A, B)]
+/// /* optionally: */ #[effectful::cloneable]
 /// fn cool_function(arg: Foo) -> Bar {
 ///     yield expr_a;
 ///     let val = yield expr_b;
@@ -96,6 +102,12 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// of its effects to the caller of the current function. The callee's effects must be a subset of
 /// the current function's effects - in this example, a subset of `{A, B}`. The callee is usually
 /// another function defined using this macro.
+///
+/// It is possible to create effectful functions whose computations can be cloned. This requires
+/// marking the function as `#[effectful::cloneable]` after the `#[effectful(...)]` invocation,
+/// the function to have only `Clone` and `Unpin` locals, and the function to never hold a
+/// reference to a local across a yield point. In other words, the underlying generator must be
+/// `Clone` and `Unpin`.
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut effects = parse_macro_input!(args as Effectful);
@@ -104,7 +116,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
     };
     let ItemFn {
-        attrs,
+        mut attrs,
         vis,
         sig,
         mut block,
@@ -123,6 +135,15 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         ReturnType::Type(_r_arrow, ref ty) => ty.to_token_stream(),
     };
     syn::visit_mut::visit_block_mut(&mut effects, &mut *block);
+    let mut cloneable = false;
+    attrs.retain(|attr| {
+        if attr.path == parse_quote!(effectful::cloneable) {
+            cloneable = true;
+            return false; // remove it from the attrs list so no one gets confused
+        }
+        return true;
+    });
+    let clone_bound = cloneable.then_some(quote!( + ::core::clone::Clone + ::core::marker::Unpin));
     quote! {
         #(#attrs)*
         #vis #constness #unsafety
@@ -131,7 +152,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             <#yield_type as ::effing_mad::injection::EffectList>::Injections,
             Yield = #yield_type,
             Return = #return_type
-        > {
+        > #clone_bound {
             move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
                 #block
             }

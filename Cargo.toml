@@ -20,3 +20,8 @@ tokio = { version = "1.20.1", optional = true, features = ["rt"], default-featur
 
 [features]
 http = ["futures", "reqwest", "tokio"]
+nondet = ["std"]
+std = []
+
+[package.metadata.docs.rs]
+features = ["nondet"]
