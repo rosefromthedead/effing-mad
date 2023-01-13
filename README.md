@@ -51,6 +51,7 @@ effing-mad is cool. Rad, even. Check out all these cool things it has:
 * procedural macros
 * ~~declarative macros~~ (used to have them, but I needed them to generate idents which they can't do :( )
 * `unsafe`
+* raw pointers
 * `Pin`, which means I'm really good at Rust
 * a dependency called "frunk". hehehehe
 

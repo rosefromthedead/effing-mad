@@ -1,5 +1,6 @@
 //! Standard effects and functions to make them useful.
 
+pub mod future;
 #[cfg(feature = "nondet")]
 pub mod nondet;
 
