@@ -49,7 +49,7 @@ fn run_nondet_inner<G, T>(
                 let g2 = pinned.clone();
                 run_nondet_inner(g2, Coproduct::inject(Tagged::new(x)), rets);
             }
-        }
+        },
         GeneratorState::Complete(ret) => rets.push(ret),
     }
 }

@@ -246,7 +246,7 @@ where
                     ControlFlow::Continue(new_injs) => injs = Coproduct::Inl(Tagged::new(new_injs)),
                     ControlFlow::Break(ret) => return ret,
                 }
-            }
+            },
             GeneratorState::Complete(ret) => return ret,
         }
     }
@@ -354,19 +354,19 @@ where
                             match pinned.resume(handler_inj) {
                                 GeneratorState::Yielded(effs) => {
                                     handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap();
-                                }
+                                },
                                 GeneratorState::Complete(inj) => {
                                     injection = PreIs::inject(Tagged::new(inj));
                                     break 'run_handler;
-                                }
+                                },
                             }
                         }
-                    }
+                    },
                     // any other effect
                     Err(effs) => {
                         injection =
                             PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap());
-                    }
+                    },
                 },
                 GeneratorState::Complete(ret) => return ret,
             }

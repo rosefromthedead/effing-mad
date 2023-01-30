@@ -55,7 +55,7 @@ impl syn::visit_mut::VisitMut for Effectful {
                 if name == "do_" {
                     *e = quote_do(&ef.base);
                 }
-            }
+            },
             Expr::Yield(ref y) => {
                 let Some(ref expr) = y.expr else { panic!("no expr?") };
                 *e = parse_quote! {
@@ -66,7 +66,7 @@ impl syn::visit_mut::VisitMut for Effectful {
                         ::effing_mad::macro_impl::get_inj(injs, marker).unwrap()
                     }
                 };
-            }
+            },
             e => syn::visit_mut::visit_expr_mut(self, e),
         }
     }
@@ -255,10 +255,10 @@ pub fn effects(input: TokenStream) -> TokenStream {
         .map(|param| match param {
             GenericParam::Type(TypeParam { ident, .. }) => {
                 quote!(::core::marker::PhantomData::<#ident>)
-            }
+            },
             GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
                 quote!(::core::marker::PhantomData::<&#lifetime ()>)
-            }
+            },
             GenericParam::Const(_) => todo!(),
         })
         .collect::<Vec<_>>();
@@ -345,7 +345,7 @@ impl Parse for Handler {
                 },
                 Pat::Path(PatPath { path, .. }) | Pat::TupleStruct(PatTupleStruct { path, .. }) => {
                     path.clone()
-                }
+                },
                 p => panic!("invalid pattern in handler: {p:?}"),
             };
             let group = TypePath { qself: None, path };
@@ -389,7 +389,7 @@ impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
                     .map(ToTokens::to_token_stream)
                     .unwrap_or(quote!(()));
                 *e = parse_quote!(return ::core::ops::ControlFlow::Break(#expr));
-            }
+            },
             Expr::Return(ExprReturn { expr, .. }) => {
                 let expr = expr
                     .as_ref()
@@ -405,7 +405,7 @@ impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
                         ::effing_mad::frunk::Coproduct::inject(#inj)
                     );
                 };
-            }
+            },
             e => syn::visit_mut::visit_expr_mut(self, e),
         }
     }
@@ -483,7 +483,7 @@ pub fn handler(input: TokenStream) -> TokenStream {
                     let mut p = p.clone();
                     p.pat.elems.push(parse_quote!(::core::marker::PhantomData));
                     quote!(#p)
-                }
+                },
                 p => panic!("invalid pattern in handler: {p:?}"),
             }
         } else {
