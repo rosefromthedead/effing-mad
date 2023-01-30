@@ -50,7 +50,7 @@ impl syn::visit_mut::VisitMut for Effectful {
     fn visit_expr_mut(&mut self, e: &mut Expr) {
         match e {
             Expr::Field(ref mut ef) => {
-                self.visit_expr_mut(&mut *ef.base);
+                self.visit_expr_mut(&mut ef.base);
                 let Member::Named(ref name) = ef.member else { return };
                 if name == "do_" {
                     *e = quote_do(&ef.base);
@@ -131,14 +131,15 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         ReturnType::Default => quote!(()),
         ReturnType::Type(_r_arrow, ref ty) => ty.to_token_stream(),
     };
-    syn::visit_mut::visit_block_mut(&mut effects, &mut *block);
+    syn::visit_mut::visit_block_mut(&mut effects, &mut block);
     let mut cloneable = false;
     attrs.retain(|attr| {
         if attr.path == parse_quote!(effectful::cloneable) {
             cloneable = true;
-            return false; // remove it from the attrs list so no one gets confused
+            false // remove it from the attrs list so no one gets confused
+        } else {
+            true
         }
-        return true;
     });
     let clone_bound = cloneable.then_some(quote!( + ::core::clone::Clone + ::core::marker::Unpin));
     quote! {

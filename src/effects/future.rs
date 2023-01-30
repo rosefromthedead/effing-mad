@@ -77,11 +77,11 @@ where
         let res = g.resume(inj);
         match res {
             GeneratorState::Yielded(eff) => match eff.uninject() {
-                Ok(Await) => return Poll::Pending,
+                Ok(Await) => Poll::Pending,
                 Err(Coproduct::Inl(GetContext)) => panic!("no need to GetContext twice"),
                 Err(Coproduct::Inr(never)) => match never {},
             },
-            GeneratorState::Complete(ret) => return Poll::Ready(ret),
+            GeneratorState::Complete(ret) => Poll::Ready(ret),
         }
     }
 }

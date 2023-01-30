@@ -32,7 +32,7 @@ where
     injs.uninject().ok().map(Tagged::untag)
 }
 
-/// A type-level function from lists of Effects and EffectGroups to lists of Effects only.
+/// A type-level function from lists of `Effect`s and `EffectGroup`s to lists of `Effects` only.
 ///
 /// This allows groups and effects to be listed together in the definition of an effectful
 /// function.

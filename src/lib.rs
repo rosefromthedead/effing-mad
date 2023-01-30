@@ -11,7 +11,7 @@
 //! effect handler, which produces another value to pass back in.
 //! - injection: an `effing_mad` term referring to the value passed into a computation as a result of
 //! it running an effect.
-//! - "pure" function: a Rust function that does not use effing_mad effects. Rust is not a pure
+//! - "pure" function: a Rust function that does not use `effing_mad` effects. Rust is not a pure
 //! language (crudely, Rust code can `println!()` whenever it wants) so these docs use quotes to
 //! indicate this meaning as opposed to the real meaning of pure, where functions do not use side
 //! effects.
