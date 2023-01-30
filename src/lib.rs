@@ -27,7 +27,6 @@
 #![feature(doc_notable_trait)]
 #![feature(generators)]
 #![feature(generator_trait)]
-#![feature(pin_macro)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 

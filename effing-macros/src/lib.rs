@@ -1,6 +1,3 @@
-// we're already on nightly for generators, so we might as well :)
-#![feature(let_else)]
-
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
