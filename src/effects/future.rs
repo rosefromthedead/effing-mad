@@ -1,3 +1,5 @@
+//! Functions and types for converting between Futures and effectful computations.
+
 use core::{
     future::Future,
     ops::{Generator, GeneratorState},
@@ -12,7 +14,10 @@ use crate::{
     Effect, EffectGroup,
 };
 
+/// An effect equivalent to `future.await`.
 pub struct Await;
+/// A request that the handler provide a [Context](core::task::Context) so that futures can be
+/// polled.
 pub struct GetContext;
 
 impl Effect for Await {
@@ -26,6 +31,7 @@ impl Effect for GetContext {
 type FEffs = <FutureEffs as EffectGroup>::Effects;
 type FInjs = <Coprod!(Await, GetContext) as EffectList>::Injections;
 
+/// The effects that allow effectful computations to emulate Futures.
 pub struct FutureEffs;
 
 impl EffectGroup for FutureEffs {
@@ -34,8 +40,8 @@ impl EffectGroup for FutureEffs {
 
 /// Brings a computation from effects land into futures land.
 ///
-/// If a computation has effects [`GetContext`] and [`Await`] then it behaves like a Future and so can
-/// be used as one through this wrapper.
+/// If a computation has effects [`GetContext`] and [`Await`] then it behaves like a Future and so
+/// can be used as one through this wrapper. See [`EffExt::futurise`] for a way to construct this.
 pub struct Futurise<G> {
     g: G,
     // TODO: if we specify that the first inj doesn't *have* to be `Begin`, we can get rid of this
@@ -83,7 +89,7 @@ where
 /// Brings a future into effects land.
 ///
 /// Futures can be expressed in terms of effectful computations with effects [`GetContext`] and
-/// [`Await`].
+/// [`Await`]. See [`FutureExt::effectfulise`] for a way to construct this.
 pub struct Effectfulise<F> {
     f: F,
 }
@@ -109,10 +115,14 @@ where
     }
 }
 
+/// Effect-related functions on [Future](core::future::Future)s.
 pub trait FutureExt: Sized {
+    /// Wraps this `Future` in a type that allows it to be used as an effectful computation.
     fn effectfulise(self) -> Effectfulise<Self>;
 }
+/// Future-related functions on effectful computations.
 pub trait EffExt: Sized {
+    /// Wraps this computation in a type that allows it to be used as a `Future`.
     fn futurise(self) -> Futurise<Self>;
 }
 

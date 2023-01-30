@@ -440,7 +440,7 @@ impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
 /// `State<i32>` example) is used as the injection for that effect. It is also possible to use the
 /// `break` keyword to cause the computation that is being handled to return. In this case, the
 /// type of the value passed to `break` must match the return type of a computation that the
-/// handler is used on. See [`map`] for a way to change the return value of a computation.
+/// handler is used on. See `effing_mad::map` for a way to change the return value of a computation.
 ///
 /// The handler can capture state from its environment, and/or be asynchronous. The keywords
 /// `async` and `move` can both optionally appear (in that order) at the very beginning of the

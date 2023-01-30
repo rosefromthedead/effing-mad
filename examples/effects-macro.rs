@@ -2,8 +2,8 @@
 //! type, and use one handler for all of them. The primary benefit of this is that this handler can
 //! own or mutably borrow some data, and that data can be accessed by all of the arms of the
 //! handler.
-//! Here we use State as a classic (and generic!) example of a side effect. The same program could
-//! just be written using a mutable variable, but that's no fun.
+//! Here we use State as a classic (and generic!) example of an effect. The same program could just
+//! be written using a mutable variable, but that's no fun.
 
 #![feature(generators)]
 #![feature(generator_trait)]

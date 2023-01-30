@@ -1,5 +1,5 @@
 //! The `effing_mad::higher_order` module contains variants of standard higher-order functions (such
-//! as `Option::map`) that take effectful functions instead of pure ones. This allows some pretty
+//! as `Option::map`) that take effectful functions instead of "pure" ones. This allows some pretty
 //! freaky control flow, like what we see here where the mapper function fails.
 
 #![feature(generators)]

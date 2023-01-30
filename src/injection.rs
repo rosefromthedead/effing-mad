@@ -20,10 +20,12 @@ pub struct Begin;
 pub struct Tagged<T, Tag>(T, PhantomData<Tag>);
 
 impl<T, Tag> Tagged<T, Tag> {
+    /// Tag the value `v` with the type parameter `Tag`.
     pub fn new(v: T) -> Self {
         Tagged(v, PhantomData)
     }
 
+    /// Unwrap a tagged value to access the value directly.
     pub fn untag(self) -> T {
         self.0
     }
@@ -41,6 +43,7 @@ impl<T: Clone, Tag> Clone for Tagged<T, Tag> {
 /// be [`Tagged`] with their effect type. This trait makes it easy to name the correct injection
 /// list according to these rules.
 pub trait EffectList {
+    /// The list of possible injections into a computation with effects `Self`.
     type Injections;
 }
 

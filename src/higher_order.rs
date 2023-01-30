@@ -8,6 +8,7 @@ use core::{
 
 use crate::injection::EffectList;
 
+/// An implementation detail of [`OptionExt::map_eff`].
 pub struct OptionMapEff<G, Effs, U> {
     g: Option<G>,
     _effs: PhantomData<*mut Effs>,
@@ -38,7 +39,14 @@ where
     }
 }
 
+/// Higher-order effectful functions on [`Option`].
 pub trait OptionExt<T>: Sized {
+    /// Transforms the value inside an [`Option::Some`] with some effects.
+    ///
+    /// This function is analogous to [`Option::map`] except it allows its argument to have effects
+    /// which must then be handled by its caller. This means that the mapper function can, for
+    /// example, await a `Future`. Other control flow constructs are of course possible here, and
+    /// impossible with vanilla [`Option::map`].
     fn map_eff<Effs, G>(self, g: impl FnOnce(T) -> G) -> OptionMapEff<G, Effs, G::Return>
     where
         Effs: EffectList,
@@ -59,6 +67,7 @@ impl<T> OptionExt<T> for Option<T> {
     }
 }
 
+/// An implementation detail of [`ResultExt::map_eff`].
 pub struct ResultMapEff<G, E, Effs, U> {
     g: Option<Result<G, E>>,
     _effs: PhantomData<*mut Effs>,
@@ -95,6 +104,7 @@ where
     }
 }
 
+/// An implementation detail of [`ResultExt::map_err_eff`].
 pub struct ResultMapErrEff<G, T, Effs, U> {
     g: Option<Result<T, G>>,
     _effs: PhantomData<*mut Effs>,
@@ -131,12 +141,19 @@ where
     }
 }
 
+/// Higher-order effectful functions on [`Result`].
 pub trait ResultExt<T, E>: Sized {
+    /// Transforms the value inside a [`Result::Ok`] with some effects.
+    ///
+    /// For more details, see [`OptionExt::map_eff`].
     fn map_eff<Effs, G>(self, g: impl FnOnce(T) -> G) -> ResultMapEff<G, E, Effs, G::Return>
     where
         Effs: EffectList,
         G: Generator<Effs::Injections, Yield = Effs>;
 
+    /// Transforms the value inside a [`Result::Err`] with some effects.
+    ///
+    /// For more details, see [`OptionExt::map_eff`].
     fn map_err_eff<Effs, G>(self, g: impl FnOnce(E) -> G) -> ResultMapErrEff<G, T, Effs, G::Return>
     where
         Effs: EffectList,

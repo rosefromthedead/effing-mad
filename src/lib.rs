@@ -1,8 +1,35 @@
+//! This library brings typed effects to Rust in a flexible and composable way. By building on
+//! [`Generator`]s, effectful computations can be expressed in a way that allows arbitrary and
+//! swappable behaviour - any handler of the correct type can be applied to a computation, meaning
+//! different semantics of effects can be selected at each call site of an effectful function.
+//!
+//! ## Glossary
+//! - effectful computation: an in-progress computation that uses effects. analogous to `Future`.
+//! - effectful function: a function that returns an effectful computation. analogous to `async fn`.
+//! - effect: you know, I'm actually not sure. I should ask one of my PL teachers. In this library
+//! though, an effect is a value that can be passed out of an effectful computation and into an
+//! effect handler, which produces another value to pass back in.
+//! - injection: an `effing_mad` term referring to the value passed into a computation as a result of
+//! it running an effect.
+//! - "pure" function: a Rust function that does not use effing_mad effects. Rust is not a pure
+//! language (crudely, Rust code can `println!()` whenever it wants) so these docs use quotes to
+//! indicate this meaning as opposed to the real meaning of pure, where functions do not use side
+//! effects.
+//!
+//! ## Getting started
+//! Define an [`Effect`]. Now, you can define an [`#[effectful(…)]`](effing_macros::effectful)
+//! function that uses it. Once you call this function, its effects can be handled one by one with
+//! [`handle`]. Handlers are "pure" Rust functions, but it's easiest to construct them using
+//! [`handler!`](effing_macros::handler). Once all the effects have been handled away, a computation
+//! can be driven with [`run`].
+
 #![feature(doc_auto_cfg)]
+#![feature(doc_notable_trait)]
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(pin_macro)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![warn(missing_docs)]
 
 pub use frunk;
 
@@ -44,14 +71,21 @@ where
     }
 }
 
-/// A side effect that must be handled by the caller of an effectful computation, or propagated up
-/// the call stack.
+/// An effect that must be handled by the caller of an effectful computation, or propagated up the
+/// call stack.
 pub trait Effect {
     /// The type of value that running this effect gives.
     type Injection;
 }
 
+/// Types which represent multiple effects.
+///
+/// Effects that are commonly used together can be grouped using a type that implements this trait.
+/// Defining an [`#[effectful]`](effing_macros::effectful) function that uses all of the effects in
+/// a group can then be done by naming the group instead of each effect.
+#[doc(notable_trait)]
 pub trait EffectGroup {
+    /// A [`Coproduct`](frunk::coproduct::Coproduct) of effects in this group.
     type Effects;
 }
 
@@ -59,7 +93,7 @@ impl<E: Effect> EffectGroup for E {
     type Effects = Coproduct<E, CNil>;
 }
 
-/// Create a new effectful computation by applying a pure function to the return value of an
+/// Create a new effectful computation by applying a "pure" function to the return value of an
 /// existing computation.
 pub fn map<E, I, T, U>(
     mut g: impl Generator<I, Yield = E, Return = T>,
@@ -77,7 +111,7 @@ pub fn map<E, I, T, U>(
     }
 }
 
-/// Apply a pure handler to an effectful computation, handling one effect.
+/// Apply a "pure" handler to an effectful computation, handling one effect.
 ///
 /// When given an effectful computation with effects (A, B, C) and a handler for effect C, this
 /// returns a new effectful computation with effects (A, B). Handlers can choose for each instance
@@ -122,7 +156,7 @@ where
     })
 }
 
-/// Apply a pure handler to an effectful computation, handling any number of effects.
+/// Apply a "pure" handler to an effectful computation, handling any number of effects.
 ///
 /// When given an effectful computation with effects (A, B, C, D) and a handler for effects (A, B),
 /// this function returns a new effectful computation with effects (C, D). Handlers can choose for
@@ -190,6 +224,8 @@ where
 ///
 /// When an async handler is used, it must handle all of the remaining effects in a computation,
 /// because it is impossible to construct a computation that is both asynchronous and effectful.
+///
+/// For more flexible interactions with Futures, see [`effects::future`].
 pub async fn handle_async<Eff, G, Fut>(mut g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
 where
     Eff: Effect,
@@ -219,11 +255,13 @@ where
 
 /// Handle all of the remaining effects in a computation using an async handler.
 ///
-/// For handling one effect asynchronously, see [`handle_group_async`]. For details on handling
-/// effects in groups, see [`handle_group`].
+/// For handling one effect asynchronously, see [`handle_async`]. For details on handling effects in
+/// groups, see [`handle_group`].
 ///
 /// When an async handler is used, it must handle all of the remaining effects in a computation,
 /// because it is impossible to construct a computation that is both asynchronous and effectful.
+///
+/// For more flexible interactions with Futures, see [`effects::future`].
 pub async fn handle_group_async<G, Fut, Es, Is, BeginIndex>(
     mut g: G,
     mut handler: impl FnMut(Es) -> Fut,

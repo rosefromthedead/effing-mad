@@ -12,11 +12,18 @@ use crate::{
     Effect, EffectGroup,
 };
 
+/// Construct a `PhantomData` with a type parameter determined by a value.
 #[must_use]
 pub fn mark<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }
 
+/// Retrieve a certain Effect's injection from a Coproduct of tagged injections.
+///
+/// The marker argument isn't necessary in isolation, as the type parameter E can be specified with
+/// a turbofish or via inference. However, [`effing_macros::effectful`] needs a way to specify E
+/// without naming any types at all. The marker argument along with [`mark`] allows specifying E
+/// by naming a value instead.
 pub fn get_inj<E, Injs, Index>(injs: Injs, _marker: PhantomData<E>) -> Option<E::Injection>
 where
     E: Effect,
@@ -25,7 +32,15 @@ where
     injs.uninject().ok().map(Tagged::untag)
 }
 
+/// A type-level function from lists of Effects and EffectGroups to lists of Effects only.
+///
+/// This allows groups and effects to be listed together in the definition of an effectful
+/// function.
 pub trait FlattenEffects {
+    /// The return "value" of this type-level function.
+    ///
+    /// Since it's a type-level function, the return "value" is a type. The return "type" is
+    /// `EffectList`, which is a trait. Huh?
     type Out: EffectList;
 }
 
@@ -38,7 +53,17 @@ where
     type Out = <<G as EffectGroup>::Effects as Prepend<Tail>>::Out;
 }
 
+/// A type-level function for concatenating two Coproducts.
+///
+/// Arguably, this represents the disjoint union of the Coproducts. It should only be the union, but
+/// I don't think that's possible. Don't concatenate overlapping coproducts, kids.
 pub trait Prepend<Tail> {
+    /// The return "value" of this type-level function.
+    ///
+    /// Since it's a type-level function, the return "value" is a type. The return "type" in this
+    /// case is... nothing? There are no constraints on it. In the implementation though, the return
+    /// "type" is the set of type lists represented with `Coproduct` as cons and
+    /// [`CNil`](frunk::coproduct::CNil) as nil.
     type Out;
 }
 
