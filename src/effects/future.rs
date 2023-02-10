@@ -143,7 +143,7 @@ where
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use std::{
         future::Future,

@@ -2,7 +2,9 @@
 
 use frunk::{Coprod, Coproduct};
 
-use std::ops::{Generator, GeneratorState};
+use core::ops::{Generator, GeneratorState};
+
+use alloc::vec::Vec;
 
 use crate::{
     injection::{Begin, Tagged},
