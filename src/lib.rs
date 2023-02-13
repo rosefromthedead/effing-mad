@@ -27,9 +27,10 @@
 #![feature(doc_notable_trait)]
 #![feature(generators)]
 #![feature(generator_trait)]
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![no_std]
 #![warn(missing_docs)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub use frunk;
