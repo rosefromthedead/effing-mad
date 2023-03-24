@@ -22,6 +22,16 @@
 //! [`handle`]. Handlers are "pure" Rust functions, but it's easiest to construct them using
 //! [`handler!`](effing_macros::handler). Once all the effects have been handled away, a computation
 //! can be driven with [`run`].
+//!
+//! ## Interaction with `async`
+//! There are two ways to bring together the async world and the effectful world. The first, and
+//! simplest, is [`handle_async`]. This allows you to handle the last effect in a computation using
+//! a handler that is an `async fn`.
+//!
+//! The second, more freaky way is with the contents of [`effects::future`]. These allow you to
+//! convert between futures and effectful computations freely - namely the `effectfulise` function
+//! and the `futurise` function will take your computations and your futures and abstract away all
+//! the other nonsense in that module.
 
 #![feature(doc_auto_cfg)]
 #![feature(doc_notable_trait)]
