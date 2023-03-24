@@ -1,3 +1,14 @@
+//! Effectful computations and futures have a lot in common. This program has a function `example`
+//! which does I/O by way of an effect `HttpRequest` and because of this the function can be called
+//! in a synchronous or asynchronous context and it will do the right thing in each, given a sane
+//! effect handler.
+//!
+//! `boring_and_old_fashioned` runs `example` once, synchronously, and prints out the number of
+//! bytes that came back in the HTTP request. `interesting_and_useful` runs `example` twice at the
+//! same time by using `join`, and prints the number of bytes in each response. The async one
+//! completes in roughly the same time even though it's doing two of The Thing, because it is I/O
+//! bound.
+
 #![feature(generators)]
 #![feature(generator_trait)]
 
