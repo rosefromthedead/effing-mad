@@ -30,8 +30,8 @@
 //!
 //! The second, more freaky way is with the contents of [`effects::future`]. These allow you to
 //! convert between futures and effectful computations freely - namely the `effectfulise` function
-//! and the `futurise` function will take your computations and your futures and abstract away all
-//! the other nonsense in that module.
+//! and the `futurise` function will take your futures and your computations and abstract away all
+//! the other nonsense in that module to get you the respective constructs.
 
 #![feature(doc_auto_cfg)]
 #![feature(doc_notable_trait)]
