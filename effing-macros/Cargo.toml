@@ -2,6 +2,7 @@
 name = "effing-macros"
 version = "0.1.0"
 description = "Macros used with the hottest algebraic effects library in Rust."
+repository.workspace = true
 edition = "2021"
 authors = ["Rose Hudson <rose@krx.sh>"]
 license = "MIT OR Apache-2.0"

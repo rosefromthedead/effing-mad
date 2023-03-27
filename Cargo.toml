@@ -1,10 +1,14 @@
 [workspace]
 members = ["effing-macros"]
 
+[workspace.package]
+repository = "https://github.com/rosefromthedead/effing-mad"
+
 [package]
 name = "effing-mad"
 version = "0.1.0"
 description = "The hottest algebraic effects library in Rust."
+repository.workspace = true
 edition = "2021"
 authors = ["Rose Hudson <rose@krx.sh>"]
 license = "MIT OR Apache-2.0"
