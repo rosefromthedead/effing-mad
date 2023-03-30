@@ -143,12 +143,12 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloc"))]
 mod tests {
-    use std::{
+    use alloc::{sync::Arc, task::Wake};
+    use core::{
         future::Future,
-        sync::Arc,
-        task::{Context, Poll, Wake},
+        task::{Context, Poll},
     };
 
     use super::{EffExt, FutureExt};
