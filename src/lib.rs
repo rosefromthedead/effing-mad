@@ -63,10 +63,18 @@ use frunk::{
 pub use effing_macros::{effectful, effects, handler};
 use injection::{Begin, EffectList, Tagged};
 
-/// An uninhabited type that can never be constructed.
-///
-/// Substitutes for `!` until that is stabilised.
-pub enum Never {}
+mod never {
+    pub trait FnOutput {
+        type Output;
+    }
+
+    impl<T> FnOutput for fn() -> T {
+        type Output = T;
+    }
+}
+
+/// The never type, [`!`]. This is an empty type that can never be constructed.
+pub type Never = <fn() -> ! as never::FnOutput>::Output;
 
 /// Run an effectful computation that has no effects.
 ///
