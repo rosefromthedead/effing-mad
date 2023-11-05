@@ -9,8 +9,8 @@
 //! Note that the effect definitions are written out manually in this example. For usage of the
 //! effects! macro, which allows more ergonomic effect definitions, see effects_macro.rs
 
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 
 use effing_mad::{effectful, handle, handler, Effect};
 

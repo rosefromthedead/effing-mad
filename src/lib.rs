@@ -1,5 +1,5 @@
 //! This library brings typed effects to Rust in a flexible and composable way. By building on
-//! [`Generator`]s, effectful computations can be expressed in a way that allows arbitrary and
+//! [`Coroutine`]s, effectful computations can be expressed in a way that allows arbitrary and
 //! swappable behaviour - any handler of the correct type can be applied to a computation, meaning
 //! different semantics of effects can be selected at each call site of an effectful function.
 //!
@@ -35,8 +35,8 @@
 
 #![feature(doc_auto_cfg)]
 #![feature(doc_notable_trait)]
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 #![no_std]
 #![warn(missing_docs)]
 
@@ -52,7 +52,7 @@ pub mod macro_impl;
 
 use core::{
     future::Future,
-    ops::{ControlFlow, Generator, GeneratorState},
+    ops::{ControlFlow, Coroutine, CoroutineState},
     pin::Pin,
 };
 use frunk::{
@@ -74,12 +74,12 @@ pub enum Never {}
 /// will never yield. Therefore they can be run by resuming them once. This function does that.
 pub fn run<F, R>(mut f: F) -> R
 where
-    F: Generator<Coproduct<Begin, CNil>, Yield = CNil, Return = R>,
+    F: Coroutine<Coproduct<Begin, CNil>, Yield = CNil, Return = R>,
 {
     let pinned = core::pin::pin!(f);
     match pinned.resume(Coproduct::Inl(Begin)) {
-        GeneratorState::Yielded(never) => match never {},
-        GeneratorState::Complete(ret) => ret,
+        CoroutineState::Yielded(never) => match never {},
+        CoroutineState::Complete(ret) => ret,
     }
 }
 
@@ -108,16 +108,16 @@ impl<E: Effect> EffectGroup for E {
 /// Create a new effectful computation by applying a "pure" function to the return value of an
 /// existing computation.
 pub fn map<E, I, T, U>(
-    mut g: impl Generator<I, Yield = E, Return = T>,
+    mut g: impl Coroutine<I, Yield = E, Return = T>,
     f: impl FnOnce(T) -> U,
-) -> impl Generator<I, Yield = E, Return = U> {
+) -> impl Coroutine<I, Yield = E, Return = U> {
     move |mut injs: I| {
         loop {
             // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injs) {
-                GeneratorState::Yielded(effs) => injs = yield effs,
-                GeneratorState::Complete(ret) => return f(ret),
+                CoroutineState::Yielded(effs) => injs = yield effs,
+                CoroutineState::Complete(ret) => return f(ret),
             }
         }
     }
@@ -149,7 +149,7 @@ pub fn handle<
 >(
     g: G,
     mut handler: impl FnMut(E) -> ControlFlow<R, E::Injection>,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
     E: Effect,
     Coprod!(Tagged<E::Injection, E>, Begin): CoproductEmbedder<PreIs, InjsIndices>,
@@ -157,7 +157,7 @@ where
     PostEs: EffectList<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex> + CoprodInjector<Tagged<E::Injection, E>, InjIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
-    G: Generator<PreIs, Yield = PreEs, Return = R>,
+    G: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
     handle_group(g, move |effs| match effs {
         Coproduct::Inl(eff) => match handler(eff) {
@@ -198,7 +198,7 @@ pub fn handle_group<
 >(
     mut g: G,
     mut handler: impl FnMut(Es) -> ControlFlow<R, Is>,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
     Es: EffectList<Injections = Is>,
     Is: CoproductEmbedder<PreIs, InjsIndices>,
@@ -206,24 +206,24 @@ where
     PostEs: EffectList<Injections = PostIs>,
     PreIs: CoprodInjector<Begin, BeginIndex>,
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
-    G: Generator<PreIs, Yield = PreEs, Return = R>,
+    G: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
     move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         loop {
-            // safety: im 90% sure that since we are inside Generator::resume which takes
+            // safety: im 90% sure that since we are inside Coroutine::resume which takes
             // Pin<&mut self>, all locals in this function are effectively pinned and this call is
             // simply projecting that
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
-                GeneratorState::Yielded(effs) => match effs.subset() {
+                CoroutineState::Yielded(effs) => match effs.subset() {
                     Ok(effs) => match handler(effs) {
                         ControlFlow::Continue(injs) => injection = injs.embed(),
                         ControlFlow::Break(ret) => return ret,
                     },
                     Err(effs) => injection = (yield effs).embed(),
                 },
-                GeneratorState::Complete(ret) => return ret,
+                CoroutineState::Complete(ret) => return ret,
             }
         }
     }
@@ -241,7 +241,7 @@ where
 pub async fn handle_async<Eff, G, Fut>(mut g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
 where
     Eff: Effect,
-    G: Generator<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff)>,
+    G: Coroutine<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff)>,
     Fut: Future<Output = ControlFlow<G::Return, Eff::Injection>>,
 {
     let mut injs = Coproduct::inject(Begin);
@@ -250,7 +250,7 @@ where
         // generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(injs) {
-            GeneratorState::Yielded(effs) => {
+            CoroutineState::Yielded(effs) => {
                 let eff = match effs {
                     Coproduct::Inl(v) => v,
                     Coproduct::Inr(never) => match never {},
@@ -260,7 +260,7 @@ where
                     ControlFlow::Break(ret) => return ret,
                 }
             },
-            GeneratorState::Complete(ret) => return ret,
+            CoroutineState::Complete(ret) => return ret,
         }
     }
 }
@@ -281,7 +281,7 @@ pub async fn handle_group_async<G, Fut, Es, Is, BeginIndex>(
 where
     Es: EffectList<Injections = Is>,
     Is: CoprodInjector<Begin, BeginIndex>,
-    G: Generator<Is, Yield = Es>,
+    G: Coroutine<Is, Yield = Es>,
     Fut: Future<Output = ControlFlow<G::Return, Is>>,
 {
     let mut injs = Is::inject(Begin);
@@ -290,11 +290,11 @@ where
         // generators
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(injs) {
-            GeneratorState::Yielded(effs) => match handler(effs).await {
+            CoroutineState::Yielded(effs) => match handler(effs).await {
                 ControlFlow::Continue(new_injs) => injs = new_injs,
                 ControlFlow::Break(ret) => return ret,
             },
-            GeneratorState::Complete(ret) => return ret,
+            CoroutineState::Complete(ret) => return ret,
         }
     }
 }
@@ -331,10 +331,10 @@ pub fn transform<
 >(
     mut g: G1,
     mut handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
     E: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
+    H: Coroutine<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
     PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PreHandleEs>,
     PreHandleEs: EffectList<Injections = PreHandleIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
     HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
@@ -348,7 +348,7 @@ where
             <PreIs as CoprodUninjector<Tagged<E::Injection, E>, InjIndex>>::Remainder,
             SubsetIndices1,
         > + CoproductSubsetter<HandlerIs, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+    G1: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
     move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
@@ -356,7 +356,7 @@ where
             // safety: see handle_group()
             let pinned = unsafe { Pin::new_unchecked(&mut g) };
             match pinned.resume(injection) {
-                GeneratorState::Yielded(effs) => match effs.uninject() {
+                CoroutineState::Yielded(effs) => match effs.uninject() {
                     // the effect we are handling
                     Ok(eff) => {
                         let mut handling = handler(eff);
@@ -365,10 +365,10 @@ where
                             // safety: same again
                             let pinned = unsafe { Pin::new_unchecked(&mut handling) };
                             match pinned.resume(handler_inj) {
-                                GeneratorState::Yielded(effs) => {
+                                CoroutineState::Yielded(effs) => {
                                     handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap();
                                 },
-                                GeneratorState::Complete(inj) => {
+                                CoroutineState::Complete(inj) => {
                                     injection = PreIs::inject(Tagged::new(inj));
                                     break 'run_handler;
                                 },
@@ -381,7 +381,7 @@ where
                             PreHandleIs::embed(PostIs::subset(yield effs.embed()).ok().unwrap());
                     },
                 },
-                GeneratorState::Complete(ret) => return ret,
+                CoroutineState::Complete(ret) => return ret,
             }
         }
     }
@@ -417,10 +417,10 @@ pub fn transform0<
 >(
     g: G1,
     handler: impl FnMut(E) -> H,
-) -> impl Generator<PostIs, Yield = PostEs, Return = R>
+) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
     E: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
+    H: Coroutine<HandlerIs, Yield = HandlerEs, Return = E::Injection>,
     PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E, EffIndex, Remainder = PostEs>,
     HandlerEs: EffectList<Injections = HandlerIs> + CoproductEmbedder<PostEs, EmbedIndices1>,
     PostEs: EffectList<Injections = PostIs> + CoproductEmbedder<PostEs, EmbedIndices2>,
@@ -431,7 +431,7 @@ where
         + CoproductSubsetter<HandlerIs, SubsetIndices1>
         + CoproductSubsetter<PostIs, SubsetIndices2>
         + CoproductEmbedder<PreIs, EmbedIndices3>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+    G1: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
     transform(g, handler)
 }
@@ -469,7 +469,7 @@ pub fn transform1<
 >(
     g: G1,
     handler: impl FnMut(E1) -> H,
-) -> impl Generator<
+) -> impl Coroutine<
     Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>,
     Yield = Coproduct<E2, PreHandleEs>,
     Return = R,
@@ -477,7 +477,7 @@ pub fn transform1<
 where
     E1: Effect,
     E2: Effect,
-    H: Generator<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
+    H: Coroutine<HandlerIs, Yield = HandlerEs, Return = E1::Injection>,
     PreEs: EffectList<Injections = PreIs> + CoprodUninjector<E1, E1Index, Remainder = PreHandleEs>,
     PreHandleEs: EffectList<Injections = PreHandleIs>
         + CoproductEmbedder<Coproduct<E2, PreHandleEs>, EmbedIndices1>,
@@ -490,7 +490,7 @@ where
     Coproduct<Tagged<E2::Injection, E2>, PreHandleIs>: CoprodInjector<Begin, BeginIndex3>
         + CoproductSubsetter<HandlerIs, SubsetIndices1>
         + CoproductSubsetter<PreHandleIs, SubsetIndices2>,
-    G1: Generator<PreIs, Yield = PreEs, Return = R>,
+    G1: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
     transform(g, handler)
 }

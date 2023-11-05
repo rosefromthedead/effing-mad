@@ -5,9 +5,9 @@
 //!
 //! solve for s, e, n, d, m, o, r, y
 
-#![feature(generators)]
-#![feature(generator_trait)]
-#![feature(generator_clone)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
+#![feature(coroutine_clone)]
 
 use effing_mad::effectful;
 use effing_mad::effects::{run_nondet, Nondet};

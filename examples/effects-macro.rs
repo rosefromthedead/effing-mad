@@ -5,8 +5,8 @@
 //! Here we use State as a classic (and generic!) example of an effect. The same program could just
 //! be written using a mutable variable, but that's no fun.
 
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 
 use effing_mad::{effectful, handle_group, handler, run};
 

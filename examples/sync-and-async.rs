@@ -9,8 +9,8 @@
 //! completes in roughly the same time even though it's doing two of The Thing, because it is I/O
 //! bound.
 
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 
 use effing_mad::{effectful, handle_group, handle_group_async, handler, run};
 

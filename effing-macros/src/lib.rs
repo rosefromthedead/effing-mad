@@ -13,7 +13,7 @@ use syn::{
 fn quote_do(e: &Expr) -> Expr {
     parse_quote! {
         {
-            use ::core::ops::{Generator, GeneratorState};
+            use ::core::ops::{Coroutine, CoroutineState};
             use ::effing_mad::frunk::Coproduct;
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
@@ -26,9 +26,9 @@ fn quote_do(e: &Expr) -> Expr {
                     pinned.resume(injection)
                 };
                 match res {
-                    GeneratorState::Yielded(effs) =>
+                    CoroutineState::Yielded(effs) =>
                         injection = (yield effs.embed()).subset().ok().unwrap(),
-                    GeneratorState::Complete(v) => break v,
+                    CoroutineState::Complete(v) => break v,
                 }
             }
         }
@@ -146,7 +146,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         #(#attrs)*
         #vis #constness #unsafety
         fn #ident #generics(#inputs)
-        -> impl ::core::ops::Generator<
+        -> impl ::core::ops::Coroutine<
             <#yield_type as ::effing_mad::injection::EffectList>::Injections,
             Yield = #yield_type,
             Return = #return_type

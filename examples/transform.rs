@@ -2,8 +2,8 @@
 //! known in effing_mad as "transforming" the effects. Print is then handled on its own and since it
 //! is the only remaining effect the computation can then be run.
 
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 
 use core::ops::ControlFlow;
 

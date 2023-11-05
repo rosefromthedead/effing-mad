@@ -2,8 +2,8 @@
 //! as `Option::map`) that take effectful functions instead of "pure" ones. This allows some pretty
 //! freaky control flow, like what we see here where the mapper function fails.
 
-#![feature(generators)]
-#![feature(generator_trait)]
+#![feature(coroutines)]
+#![feature(coroutine_trait)]
 
 use effing_mad::{effectful, handle, handler, higher_order::OptionExt, run, Effect, Never};
 

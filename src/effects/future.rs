@@ -2,7 +2,7 @@
 
 use core::{
     future::Future,
-    ops::{Generator, GeneratorState},
+    ops::{Coroutine, CoroutineState},
     pin::Pin,
     task::{Context, Poll, Waker},
 };
@@ -51,9 +51,9 @@ pub struct Futurise<G> {
 
 impl<G> Future for Futurise<G>
 where
-    G: Generator<FInjs, Yield = FEffs>,
+    G: Coroutine<FInjs, Yield = FEffs>,
 {
-    type Output = <G as Generator<FInjs>>::Return;
+    type Output = <G as Coroutine<FInjs>>::Return;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // see the todo on has_begun
@@ -66,22 +66,22 @@ where
         let g = unsafe { Pin::new_unchecked(&mut self.as_mut().get_unchecked_mut().g) };
         let res = g.resume(inj);
         match res {
-            GeneratorState::Yielded(eff) => match eff.uninject() {
+            CoroutineState::Yielded(eff) => match eff.uninject() {
                 Ok(GetContext) => inj = Coproduct::inject(Tagged::new(cx.waker() as *const Waker)),
                 Err(Coproduct::Inl(Await)) => panic!("can't await without context"),
                 Err(Coproduct::Inr(never)) => match never {},
             },
-            GeneratorState::Complete(ret) => return Poll::Ready(ret),
+            CoroutineState::Complete(ret) => return Poll::Ready(ret),
         }
         let g = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().g) };
         let res = g.resume(inj);
         match res {
-            GeneratorState::Yielded(eff) => match eff.uninject() {
+            CoroutineState::Yielded(eff) => match eff.uninject() {
                 Ok(Await) => Poll::Pending,
                 Err(Coproduct::Inl(GetContext)) => panic!("no need to GetContext twice"),
                 Err(Coproduct::Inr(never)) => match never {},
             },
-            GeneratorState::Complete(ret) => Poll::Ready(ret),
+            CoroutineState::Complete(ret) => Poll::Ready(ret),
         }
     }
 }
@@ -94,23 +94,23 @@ pub struct Effectfulise<F> {
     f: F,
 }
 
-impl<F> Generator<FInjs> for Effectfulise<F>
+impl<F> Coroutine<FInjs> for Effectfulise<F>
 where
     F: Future,
 {
     type Yield = FEffs;
     type Return = F::Output;
 
-    fn resume(self: Pin<&mut Self>, injs: FInjs) -> GeneratorState<Self::Yield, Self::Return> {
+    fn resume(self: Pin<&mut Self>, injs: FInjs) -> CoroutineState<Self::Yield, Self::Return> {
         // safety: project
         let f = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().f) };
         match injs.uninject::<Tagged<*const Waker, _>, _>() {
             // safety: it's a pointer to something that the caller has a reference to.
             Ok(waker) => match f.poll(&mut Context::from_waker(unsafe { &*waker.untag() })) {
-                Poll::Ready(ret) => GeneratorState::Complete(ret),
-                Poll::Pending => GeneratorState::Yielded(Coproduct::inject(GetContext)),
+                Poll::Ready(ret) => CoroutineState::Complete(ret),
+                Poll::Pending => CoroutineState::Yielded(Coproduct::inject(GetContext)),
             },
-            Err(_) => GeneratorState::Yielded(Coproduct::inject(GetContext)),
+            Err(_) => CoroutineState::Yielded(Coproduct::inject(GetContext)),
         }
     }
 }
@@ -133,7 +133,7 @@ impl<F: Future> FutureExt for F {
 }
 impl<G> EffExt for G
 where
-    G: Generator<FInjs, Yield = FEffs>,
+    G: Coroutine<FInjs, Yield = FEffs>,
 {
     fn futurise(self) -> Futurise<Self> {
         Futurise {
