@@ -51,13 +51,17 @@ impl syn::visit_mut::VisitMut for Effectful {
         match e {
             Expr::Field(ref mut ef) => {
                 self.visit_expr_mut(&mut ef.base);
-                let Member::Named(ref name) = ef.member else { return };
+                let Member::Named(ref name) = ef.member else {
+                    return;
+                };
                 if name == "do_" {
                     *e = quote_do(&ef.base);
                 }
             },
             Expr::Yield(ref y) => {
-                let Some(ref expr) = y.expr else { panic!("no expr?") };
+                let Some(ref expr) = y.expr else {
+                    panic!("no expr?")
+                };
                 *e = parse_quote! {
                     {
                         let effect = { #expr };
@@ -79,7 +83,7 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// execution, and return a `Future` when called.
 ///
 /// # Usage
-/// ```rust
+/// ```rust,ignore
 /// #[effectful(A, B)]
 /// /* optionally: */ #[effectful::cloneable]
 /// fn cool_function(arg: Foo) -> Bar {
@@ -224,7 +228,7 @@ impl Parse for Effects {
 /// Define a new group of effects.
 ///
 /// # Usage
-/// ```rust
+/// ```rust,ignore
 /// effects! {
 ///     State<T> {
 ///         fn get() -> T;
@@ -416,7 +420,7 @@ impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
 ///
 /// # Usage
 /// Handling a group of effects at once:
-/// ```rust
+/// ```rust,ignore
 /// let mut state = 0i32;
 /// handle_group(
 ///     g,
@@ -430,7 +434,7 @@ impl<T: ToTokens> syn::visit_mut::VisitMut for FixControlFlow<T> {
 /// ```
 ///
 /// Handling a single effect at once:
-/// ```
+/// ```rust,ignore
 /// handle(g, handler!(Cancel => break))
 /// ```
 ///
