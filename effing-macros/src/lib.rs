@@ -19,7 +19,7 @@ fn quote_do(e: &Expr) -> Expr {
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
                 // interesting hack to trick the borrow checker
-                // allows cloneable generators
+                // allows cloneable coroutines
                 let res = {
                     // safety: same as in `handle_group`
                     let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
@@ -107,7 +107,7 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// It is possible to create effectful functions whose computations can be cloned. This requires
 /// marking the function as `#[effectful::cloneable]` after the `#[effectful(...)]` invocation,
 /// the function to have only `Clone` and `Unpin` locals, and the function to never hold a
-/// reference to a local across a yield point. In other words, the underlying generator must be
+/// reference to a local across a yield point. In other words, the underlying coroutine must be
 /// `Clone` and `Unpin`.
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {

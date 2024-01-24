@@ -2,7 +2,7 @@
 
 use frunk::{Coprod, Coproduct};
 
-use core::ops::{Generator, GeneratorState};
+use core::ops::{Coroutine, CoroutineState};
 
 use alloc::vec::Vec;
 
@@ -26,7 +26,7 @@ impl<T> Effect for Nondet<T> {
 /// Run a nondeterministic computation, collecting all the resulting return values into a `Vec`.
 pub fn run_nondet<G, T>(g: G) -> Vec<G::Return>
 where
-    G: Generator<Coprod!(Tagged<T, Nondet<T>>, Begin), Yield = Coprod!(Nondet<T>)> + Clone,
+    G: Coroutine<Coprod!(Tagged<T, Nondet<T>>, Begin), Yield = Coprod!(Nondet<T>)> + Clone,
 {
     let mut rets = Vec::new();
     run_nondet_inner(g, Coproduct::inject(Begin), &mut rets);
@@ -38,11 +38,11 @@ fn run_nondet_inner<G, T>(
     injs: Coprod!(Tagged<T, Nondet<T>>, Begin),
     rets: &mut Vec<G::Return>,
 ) where
-    G: Generator<Coprod!(Tagged<T, Nondet<T>>, Begin), Yield = Coprod!(Nondet<T>)> + Clone,
+    G: Coroutine<Coprod!(Tagged<T, Nondet<T>>, Begin), Yield = Coprod!(Nondet<T>)> + Clone,
 {
     let mut pinned = core::pin::pin!(g);
     match pinned.as_mut().resume(injs) {
-        GeneratorState::Yielded(effs) => {
+        CoroutineState::Yielded(effs) => {
             let Nondet(xs) = match effs {
                 Coproduct::Inl(v) => v,
                 Coproduct::Inr(never) => match never {},
@@ -52,6 +52,6 @@ fn run_nondet_inner<G, T>(
                 run_nondet_inner(g2, Coproduct::inject(Tagged::new(x)), rets);
             }
         },
-        GeneratorState::Complete(ret) => rets.push(ret),
+        CoroutineState::Complete(ret) => rets.push(ret),
     }
 }
