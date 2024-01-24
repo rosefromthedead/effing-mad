@@ -8,7 +8,7 @@ use crate::Effect;
 
 /// Before an effectful computation has started, there is no injection to pass in, because no
 /// effects have been run yet. However, due to the signature of
-/// [`Generator::resume`](core::ops::Generator::resume), it is necessary to pass one in anyway.
+/// [`Coroutine::resume`](core::ops::Coroutine::resume), it is necessary to pass one in anyway.
 /// This type is used as a first injection for all effectful computations.
 #[derive(Clone, Copy)]
 pub struct Begin;

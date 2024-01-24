@@ -44,7 +44,7 @@ I wanted to see what would happen.
 
 ## how cool is it?
 effing-mad is cool. Rad, even. Check out all these cool things it has:
-* unstable compiler features (generators, generator_trait)
+* unstable compiler features (coroutines, coroutine_trait)
 * a function with 22 type arguments
 * `#![no_std]`
 * scary category theory words (coproduct! 👻)
@@ -70,10 +70,10 @@ On the other hand, I do understand algebraic effects, and therefore they are goo
 far more easily and in my opinion are more intuitive. Download effing-mad today!
 
 ## more facts - to do with rust this time
-effing-mad uses generators. The implementation of it was made far easier by the lang team already
-needing functions that can be suspended and resumed, because that caused them to invent generators.
+effing-mad uses coroutines. The implementation of it was made far easier by the lang team already
+needing functions that can be suspended and resumed, because that caused them to invent coroutines.
 Even though they were made for the compiler to be able to compile async fns, they're way more
 general than async fns are.
 
-Generators are used by the compiler, but directly using them has not been stabilised yet because no
+Coroutines are used by the compiler, but directly using them has not been stabilised yet because no
 one really needs it to be. That's why you need to use a nightly compiler to use effing-mad.

@@ -70,7 +70,7 @@ pub enum Never {}
 
 /// Run an effectful computation that has no effects.
 ///
-/// Effectful computations are generators, but if they have no effects, it is guaranteed that they
+/// Effectful computations are coroutines, but if they have no effects, it is guaranteed that they
 /// will never yield. Therefore they can be run by resuming them once. This function does that.
 pub fn run<F, R>(mut f: F) -> R
 where
@@ -247,7 +247,7 @@ where
     let mut injs = Coproduct::inject(Begin);
     loop {
         // safety: see handle_group() - remember that futures are pinned in the same way as
-        // generators
+        // coroutines
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(injs) {
             CoroutineState::Yielded(effs) => {
@@ -287,7 +287,7 @@ where
     let mut injs = Is::inject(Begin);
     loop {
         // safety: see handle_group() - remember that futures are pinned in the same way as
-        // generators
+        // coroutines
         let pinned = unsafe { Pin::new_unchecked(&mut g) };
         match pinned.resume(injs) {
             CoroutineState::Yielded(effs) => match handler(effs).await {
