@@ -53,7 +53,7 @@ pub mod macro_impl;
 use core::{
     future::Future,
     ops::{ControlFlow, Coroutine, CoroutineState},
-    pin::Pin,
+    pin::pin,
 };
 use frunk::{
     coproduct::{CNil, CoprodInjector, CoprodUninjector, CoproductEmbedder, CoproductSubsetter},
@@ -76,7 +76,7 @@ pub fn run<F, R>(mut f: F) -> R
 where
     F: Coroutine<Coproduct<Begin, CNil>, Yield = CNil, Return = R>,
 {
-    let pinned = core::pin::pin!(f);
+    let pinned = pin!(f);
     match pinned.resume(Coproduct::Inl(Begin)) {
         CoroutineState::Yielded(never) => match never {},
         CoroutineState::Complete(ret) => ret,
@@ -108,14 +108,13 @@ impl<E: Effect> EffectGroup for E {
 /// Create a new effectful computation by applying a "pure" function to the return value of an
 /// existing computation.
 pub fn map<E, I, T, U>(
-    mut g: impl Coroutine<I, Yield = E, Return = T>,
+    g: impl Coroutine<I, Yield = E, Return = T>,
     f: impl FnOnce(T) -> U,
 ) -> impl Coroutine<I, Yield = E, Return = U> {
-    move |mut injs: I| {
+    static move |mut injs: I| {
+        let mut pinned = pin!(g);
         loop {
-            // safety: see handle_group()
-            let pinned = unsafe { Pin::new_unchecked(&mut g) };
-            match pinned.resume(injs) {
+            match pinned.as_mut().resume(injs) {
                 CoroutineState::Yielded(effs) => injs = yield effs,
                 CoroutineState::Complete(ret) => return f(ret),
             }
@@ -196,7 +195,7 @@ pub fn handle_group<
     BeginIndex,
     EmbedIndices,
 >(
-    mut g: G,
+    g: G,
     mut handler: impl FnMut(Es) -> ControlFlow<R, Is>,
 ) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
@@ -208,14 +207,11 @@ where
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
     G: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
-    move |_begin: PostIs| {
+    static move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
+        let mut pinned = pin!(g);
         loop {
-            // safety: im 90% sure that since we are inside Coroutine::resume which takes
-            // Pin<&mut self>, all locals in this function are effectively pinned and this call is
-            // simply projecting that
-            let pinned = unsafe { Pin::new_unchecked(&mut g) };
-            match pinned.resume(injection) {
+            match pinned.as_mut().resume(injection) {
                 CoroutineState::Yielded(effs) => match effs.subset() {
                     Ok(effs) => match handler(effs) {
                         ControlFlow::Continue(injs) => injection = injs.embed(),
@@ -238,18 +234,16 @@ where
 /// because it is impossible to construct a computation that is both asynchronous and effectful.
 ///
 /// For more flexible interactions with Futures, see [`effects::future`].
-pub async fn handle_async<Eff, G, Fut>(mut g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
+pub async fn handle_async<Eff, G, Fut>(g: G, mut handler: impl FnMut(Eff) -> Fut) -> G::Return
 where
     Eff: Effect,
     G: Coroutine<Coprod!(Tagged<Eff::Injection, Eff>, Begin), Yield = Coprod!(Eff)>,
     Fut: Future<Output = ControlFlow<G::Return, Eff::Injection>>,
 {
     let mut injs = Coproduct::inject(Begin);
+    let mut pinned = pin!(g);
     loop {
-        // safety: see handle_group() - remember that futures are pinned in the same way as
-        // coroutines
-        let pinned = unsafe { Pin::new_unchecked(&mut g) };
-        match pinned.resume(injs) {
+        match pinned.as_mut().resume(injs) {
             CoroutineState::Yielded(effs) => {
                 let eff = match effs {
                     Coproduct::Inl(v) => v,
@@ -285,11 +279,9 @@ where
     Fut: Future<Output = ControlFlow<G::Return, Is>>,
 {
     let mut injs = Is::inject(Begin);
+    let mut pinned = pin!(g);
     loop {
-        // safety: see handle_group() - remember that futures are pinned in the same way as
-        // coroutines
-        let pinned = unsafe { Pin::new_unchecked(&mut g) };
-        match pinned.resume(injs) {
+        match pinned.as_mut().resume(injs) {
             CoroutineState::Yielded(effs) => match handler(effs).await {
                 ControlFlow::Continue(new_injs) => injs = new_injs,
                 ControlFlow::Break(ret) => return ret,
@@ -329,7 +321,7 @@ pub fn transform<
     EmbedIndices2,
     EmbedIndices3,
 >(
-    mut g: G1,
+    g: G1,
     mut handler: impl FnMut(E) -> H,
 ) -> impl Coroutine<PostIs, Yield = PostEs, Return = R>
 where
@@ -350,21 +342,18 @@ where
         > + CoproductSubsetter<HandlerIs, SubsetIndices2>,
     G1: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
-    move |_begin: PostIs| {
+    static move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
+        let mut pinned = pin!(g);
         loop {
-            // safety: see handle_group()
-            let pinned = unsafe { Pin::new_unchecked(&mut g) };
-            match pinned.resume(injection) {
+            match pinned.as_mut().resume(injection) {
                 CoroutineState::Yielded(effs) => match effs.uninject() {
                     // the effect we are handling
                     Ok(eff) => {
-                        let mut handling = handler(eff);
+                        let mut handling = pin!(handler(eff));
                         let mut handler_inj = HandlerIs::inject(Begin);
                         'run_handler: loop {
-                            // safety: same again
-                            let pinned = unsafe { Pin::new_unchecked(&mut handling) };
-                            match pinned.resume(handler_inj) {
+                            match handling.as_mut().resume(handler_inj) {
                                 CoroutineState::Yielded(effs) => {
                                     handler_inj = PostIs::subset(yield effs.embed()).ok().unwrap();
                                 },
