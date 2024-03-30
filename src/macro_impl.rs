@@ -7,10 +7,7 @@ use frunk::{
     Coproduct,
 };
 
-use crate::{
-    injection::{EffectList, Tagged},
-    Effect, EffectGroup,
-};
+use crate::{injection::Tagged, Effect, EffectGroup};
 
 /// Construct a `PhantomData` with a type parameter determined by a value.
 #[must_use]
@@ -38,19 +35,20 @@ where
 /// function.
 pub trait FlattenEffects {
     /// The return "value" of this type-level function.
-    ///
-    /// Since it's a type-level function, the return "value" is a type. The return "type" is
-    /// `EffectList`, which is a trait. Huh?
-    type Out: EffectList;
+    type Out;
 }
 
 impl<G, Tail> FlattenEffects for Coproduct<G, Tail>
 where
     G: EffectGroup,
-    <G as EffectGroup>::Effects: Prepend<Tail>,
-    <<G as EffectGroup>::Effects as Prepend<Tail>>::Out: EffectList,
+    <G as EffectGroup>::Effects: Prepend<<Tail as FlattenEffects>::Out>,
+    Tail: FlattenEffects,
 {
-    type Out = <<G as EffectGroup>::Effects as Prepend<Tail>>::Out;
+    type Out = <<G as EffectGroup>::Effects as Prepend<<Tail as FlattenEffects>::Out>>::Out;
+}
+
+impl FlattenEffects for CNil {
+    type Out = CNil;
 }
 
 /// A type-level function for concatenating two Coproducts.
