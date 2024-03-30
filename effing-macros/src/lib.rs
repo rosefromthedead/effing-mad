@@ -10,7 +10,7 @@ use syn::{
     Signature, Token, Type, TypeParam, TypePath, Visibility,
 };
 
-fn quote_do(e: &Expr) -> Expr {
+fn quote_do_pinned(e: &Expr) -> Expr {
     parse_quote! {
         {
             use ::core::ops::{Coroutine, CoroutineState};
@@ -18,13 +18,28 @@ fn quote_do(e: &Expr) -> Expr {
             let mut gen = #e;
             let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
             loop {
-                // interesting hack to trick the borrow checker
-                // allows cloneable coroutines
-                let res = {
-                    // safety: same as in `handle_group`
-                    let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
-                    pinned.resume(injection)
-                };
+                let pinned = unsafe { ::core::pin::Pin::new_unchecked(&mut gen) };
+                let res = pinned.resume(injection);
+                match res {
+                    CoroutineState::Yielded(effs) =>
+                        injection = (yield effs.embed()).subset().ok().unwrap(),
+                    CoroutineState::Complete(v) => break v,
+                }
+            }
+        }
+    }
+}
+
+fn quote_do_unpin(e: &Expr) -> Expr {
+    parse_quote! {
+        {
+            use ::core::ops::{Coroutine, CoroutineState};
+            use ::effing_mad::frunk::Coproduct;
+            let mut gen = #e;
+            let mut injection = Coproduct::inject(::effing_mad::injection::Begin);
+            loop {
+                let pinned = ::core::pin::Pin::new(&mut gen);
+                let res = pinned.resume(injection);
                 match res {
                     CoroutineState::Yielded(effs) =>
                         injection = (yield effs.embed()).subset().ok().unwrap(),
@@ -46,7 +61,11 @@ impl Parse for Effectful {
     }
 }
 
-impl syn::visit_mut::VisitMut for Effectful {
+struct EffectfulBodyVisitor {
+    cloneable: bool,
+}
+
+impl syn::visit_mut::VisitMut for EffectfulBodyVisitor {
     fn visit_expr_mut(&mut self, e: &mut Expr) {
         match e {
             Expr::Field(ref mut ef) => {
@@ -55,7 +74,11 @@ impl syn::visit_mut::VisitMut for Effectful {
                     return;
                 };
                 if name == "do_" {
-                    *e = quote_do(&ef.base);
+                    *e = if self.cloneable {
+                        quote_do_unpin(&ef.base)
+                    } else {
+                        quote_do_pinned(&ef.base)
+                    };
                 }
             },
             Expr::Yield(ref y) => {
@@ -111,7 +134,7 @@ impl syn::visit_mut::VisitMut for Effectful {
 /// `Clone` and `Unpin`.
 #[proc_macro_attribute]
 pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut effects = parse_macro_input!(args as Effectful);
+    let effects = parse_macro_input!(args as Effectful);
     let effect_names = effects.effects.iter();
     let yield_type = quote! {
         <::effing_mad::frunk::Coprod!(#(#effect_names),*) as ::effing_mad::macro_impl::FlattenEffects>::Out
@@ -135,7 +158,6 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
         ReturnType::Default => quote!(()),
         ReturnType::Type(_r_arrow, ref ty) => ty.to_token_stream(),
     };
-    syn::visit_mut::visit_block_mut(&mut effects, &mut block);
     let mut cloneable = false;
     attrs.retain(|attr| {
         if attr.path == parse_quote!(effectful::cloneable) {
@@ -145,7 +167,12 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             true
         }
     });
+
+    let mut visitor = EffectfulBodyVisitor { cloneable };
+    syn::visit_mut::visit_block_mut(&mut visitor, &mut block);
+
     let clone_bound = cloneable.then_some(quote!( + ::core::clone::Clone + ::core::marker::Unpin));
+    let maybe_static = (!cloneable).then_some(quote!(static));
     quote! {
         #(#attrs)*
         #vis #constness #unsafety
@@ -156,7 +183,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             Return = #return_type
         > #clone_bound {
             #[coroutine]
-            move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
+            #maybe_static move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
                 #block
             }
         }
