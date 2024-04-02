@@ -164,20 +164,23 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 struct EffectArg {
+    vis: Visibility,
     name: Ident,
     ty: Type,
 }
 
 impl Parse for EffectArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let vis = input.parse()?;
         let name = input.parse()?;
         let _: Token![:] = input.parse()?;
         let ty: Type = input.parse()?;
-        Ok(EffectArg { name, ty })
+        Ok(EffectArg { vis, name, ty })
     }
 }
 
 struct Effect {
+    vis: Visibility,
     name: Ident,
     args: Punctuated<EffectArg, Token![,]>,
     ret: Type,
@@ -185,6 +188,7 @@ struct Effect {
 
 impl Parse for Effect {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let vis = input.parse()?;
         <Token![fn]>::parse(input)?;
         let name = input.parse()?;
 
@@ -195,7 +199,12 @@ impl Parse for Effect {
         <Token![->]>::parse(input)?;
         let ret = input.parse()?;
 
-        Ok(Effect { name, args, ret })
+        Ok(Effect {
+            vis,
+            name,
+            args,
+            ret,
+        })
     }
 }
 
@@ -253,42 +262,48 @@ pub fn effects(input: TokenStream) -> TokenStream {
         effects,
     } = parse_macro_input!(input as Effects);
 
-    let eff_name = effects.iter().map(|eff| &eff.name).collect::<Vec<_>>();
-    let phantom_datas = generics
+    let (eff_vis, eff_name): (Vec<_>, Vec<_>) =
+        effects.iter().map(|eff| (&eff.vis, &eff.name)).unzip();
+    let phantom_data_tys = generics
         .params
         .iter()
         .map(|param| match param {
             GenericParam::Type(TypeParam { ident, .. }) => {
-                quote!(::core::marker::PhantomData::<#ident>)
+                parse_quote!(::core::marker::PhantomData::<#ident>)
             },
             GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
-                quote!(::core::marker::PhantomData::<&#lifetime ()>)
+                parse_quote!(::core::marker::PhantomData::<&#lifetime ()>)
             },
             GenericParam::Const(_) => todo!(),
         })
-        .collect::<Vec<_>>();
-    let phantom_datas = quote!(#(#phantom_datas),*);
-    let maybe_phantom_data = generics
+        .collect::<Vec<Type>>();
+    let group_phantom_data_field = generics
         .lt_token
-        .map(|_| quote!(::core::marker::PhantomData::<#group_name #generics>));
+        .map(|_| quote!(pub ::core::marker::PhantomData::<#group_name #generics>));
+    let group_phantom_data = generics
+        .lt_token
+        .map(|_| quote!(::core::marker::PhantomData));
 
-    let arg_name = effects
+    let (arg_vis, (arg_name, arg_ty)): (Vec<_>, (Vec<_>, Vec<_>)) = effects
         .iter()
-        .map(|eff| eff.args.iter().map(|arg| &arg.name).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let arg_ty = effects
-        .iter()
-        .map(|eff| eff.args.iter().map(|arg| &arg.ty).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
+        .map(|eff| {
+            let (arg_vis, (arg_name, arg_ty)): (Vec<_>, (Vec<_>, Vec<_>)) = eff
+                .args
+                .iter()
+                .map(|arg| (&arg.vis, (&arg.name, &arg.ty)))
+                .unzip();
+            (arg_vis, (arg_name, arg_ty))
+        })
+        .unzip();
     let ret_ty = effects.iter().map(|eff| &eff.ret).collect::<Vec<_>>();
 
     quote! {
-        #vis struct #group_name #generics (#phantom_datas);
+        #vis struct #group_name #generics (#(#phantom_data_tys),*);
 
         impl #generics #group_name #generics {
             #(
-            fn #eff_name(#(#arg_name: #arg_ty),*) -> #eff_name #generics {
-                #eff_name(#(#arg_name,)* #maybe_phantom_data)
+            #eff_vis fn #eff_name(#(#arg_name: #arg_ty),*) -> #eff_name #generics {
+                #eff_name(#(#arg_name,)* #group_phantom_data)
             }
             )*
         }
@@ -299,7 +314,7 @@ pub fn effects(input: TokenStream) -> TokenStream {
 
         #(
         #[allow(non_camel_case_types)]
-        #vis struct #eff_name #generics (#(#arg_ty,)* #maybe_phantom_data);
+        #vis struct #eff_name #generics (#(#arg_vis #arg_ty,)* #group_phantom_data_field);
 
         impl #generics ::effing_mad::Effect for #eff_name #generics {
             type Injection = #ret_ty;
