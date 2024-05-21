@@ -155,6 +155,7 @@ pub fn effectful(args: TokenStream, item: TokenStream) -> TokenStream {
             Yield = #yield_type,
             Return = #return_type
         > #clone_bound {
+            #[coroutine]
             move |_begin: <#yield_type as ::effing_mad::injection::EffectList>::Injections| {
                 #block
             }

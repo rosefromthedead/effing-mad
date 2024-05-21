@@ -111,6 +111,7 @@ pub fn map<E, I, T, U>(
     g: impl Coroutine<I, Yield = E, Return = T>,
     f: impl FnOnce(T) -> U,
 ) -> impl Coroutine<I, Yield = E, Return = U> {
+    #[coroutine]
     static move |mut injs: I| {
         let mut pinned = pin!(g);
         loop {
@@ -207,6 +208,7 @@ where
     PostIs: CoproductEmbedder<PreIs, EmbedIndices>,
     G: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
+    #[coroutine]
     static move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         let mut pinned = pin!(g);
@@ -342,6 +344,7 @@ where
         > + CoproductSubsetter<HandlerIs, SubsetIndices2>,
     G1: Coroutine<PreIs, Yield = PreEs, Return = R>,
 {
+    #[coroutine]
     static move |_begin: PostIs| {
         let mut injection = PreIs::inject(Begin);
         let mut pinned = pin!(g);
